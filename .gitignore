@@ -1,0 +1,44 @@
+# Security — never tracked
+Security/
+
+# Xcode
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+DerivedData/
+*.hmap
+*.ipa
+*.xcarchive
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# CocoaPods (not used, but just in case)
+Pods/
+Podfile.lock
+
+# Firebase — never commit the service config
+GoogleService-Info.plist
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Xcode workspace shared data (keep scheme files, ignore local settings)
+*.xcworkspace/xcuserdata/
