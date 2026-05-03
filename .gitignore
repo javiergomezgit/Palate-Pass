@@ -42,3 +42,4 @@ GoogleService-Info.plist
 
 # Xcode workspace shared data (keep scheme files, ignore local settings)
 *.xcworkspace/xcuserdata/
+/.claude
