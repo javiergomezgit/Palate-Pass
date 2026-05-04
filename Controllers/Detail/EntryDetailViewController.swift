@@ -1,13 +1,12 @@
 // MARK: – MVVM | View
-// Renders a single entry's details. Reads only from EntryDetailViewModel —
-// never accesses DataManager or FoodEntry fields directly.
+// Renders a single entry's details. Reads only from EntryDetailViewModel.
 
 import UIKit
 import MapKit
 
 final class EntryDetailViewController: UIViewController {
 
-    // MARK: – MVVM wiring
+    // MARK: – MVVM
 
     private let viewModel: EntryDetailViewModel
 
@@ -18,7 +17,7 @@ final class EntryDetailViewController: UIViewController {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    // MARK: – Stored coordinate (set in populate, used in viewDidAppear so map has a real frame)
+    // MARK: – Stored coordinate (set in populate, applied in viewDidAppear)
 
     private var pendingCoordinate: CLLocationCoordinate2D?
 
@@ -43,7 +42,6 @@ final class EntryDetailViewController: UIViewController {
         return iv
     }()
 
-    // +10 %: font 13 → 14 pt, cornerRadius 10 → 11
     private let categoryLabel: UILabel = {
         let l = UILabel()
         l.font = .systemFont(ofSize: 14, weight: .semibold)
@@ -54,21 +52,14 @@ final class EntryDetailViewController: UIViewController {
         return l
     }()
 
-    private let nameLabel: UILabel = {
+    // Place is the primary heading — no item name label
+    private let placeLabel: UILabel = {
         let l = UILabel()
         l.font = .systemFont(ofSize: 26, weight: .bold)
         l.numberOfLines = 0
         return l
     }()
 
-    private let placeLabel: UILabel = {
-        let l = UILabel()
-        l.font = .systemFont(ofSize: 16)
-        l.textColor = .secondaryLabel
-        return l
-    }()
-
-    // isInteractive = false; height pinned below to prevent vertical stretch
     private let starView: StarRatingView = {
         let sv = StarRatingView()
         sv.isInteractive = false
@@ -89,11 +80,12 @@ final class EntryDetailViewController: UIViewController {
         return l
     }()
 
-    private let privacyBadge: UILabel = {
+    private let visibilityBadge: UILabel = {
         let l = UILabel()
         l.font = .systemFont(ofSize: 13, weight: .medium)
         l.layer.cornerRadius = 10
         l.clipsToBounds = true
+        l.isUserInteractionEnabled = true
         return l
     }()
 
@@ -132,27 +124,28 @@ final class EntryDetailViewController: UIViewController {
         title = viewModel.categoryBadge
 
         navigationItem.rightBarButtonItem = UIBarButtonItem(
-            barButtonSystemItem: .edit,
-            target: self,
-            action: #selector(editTapped)
+            barButtonSystemItem: .edit, target: self, action: #selector(editTapped)
         )
 
         setupScrollView()
         populate()
 
-        // Bind ViewModel output (privacy toggle re-renders the badge)
         viewModel.onEntryUpdated = { [weak self] in
-            self?.updatePrivacyBadge()
+            self?.updateVisibilityBadge()
         }
+
+        // Tap the badge to cycle visibility
+        visibilityBadge.addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(visibilityBadgeTapped))
+        )
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        // Set the map region here — the map view has a real frame by now,
-        // which is required for tile loading to work correctly.
         if let coord = pendingCoordinate {
+            // 300 feet ≈ 91 metres
             miniMap.setRegion(
-                MKCoordinateRegion(center: coord, latitudinalMeters: 500, longitudinalMeters: 500),
+                MKCoordinateRegion(center: coord, latitudinalMeters: 91, longitudinalMeters: 91),
                 animated: false
             )
         }
@@ -165,19 +158,31 @@ final class EntryDetailViewController: UIViewController {
         navigationController?.pushViewController(addVC, animated: true)
     }
 
-    // MARK: – Private
+    @objc private func visibilityBadgeTapped() {
+        let sheet = UIAlertController(title: "Visibility", message: nil, preferredStyle: .actionSheet)
+        for option in EntryVisibility.allCases {
+            let action = UIAlertAction(title: option.label, style: .default) { [weak self] _ in
+                self?.viewModel.setVisibility(option)
+            }
+            if option == viewModel.visibility { action.setValue(true, forKey: "checked") }
+            sheet.addAction(action)
+        }
+        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        sheet.popoverPresentationController?.sourceView = visibilityBadge
+        present(sheet, animated: true)
+    }
+
+    // MARK: – Layout
 
     private func setupScrollView() {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(scrollView)
         scrollView.addSubview(stack)
-
         NSLayoutConstraint.activate([
             scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-
             stack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 16),
             stack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: 16),
             stack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -16),
@@ -194,21 +199,19 @@ final class EntryDetailViewController: UIViewController {
             heroImageView.heightAnchor.constraint(equalToConstant: 220).isActive = true
         }
 
-        // Category badge + name
+        // Category badge
         categoryLabel.text = "  \(viewModel.categoryBadge)  "
         categoryLabel.backgroundColor = Theme.categoryColor(viewModel.category)
         let headerRow = UIStackView(arrangedSubviews: [categoryLabel, UIView()])
         headerRow.axis = .horizontal
         stack.addArrangedSubview(headerRow)
 
-        nameLabel.text = viewModel.itemName
-        stack.addArrangedSubview(nameLabel)
-
+        // Place name — primary heading
         placeLabel.text = viewModel.placeName
         stack.addArrangedSubview(placeLabel)
 
-        // Star rating — pin height to 26 pt (= StarRatingView.starSize) to prevent vertical stretch
-        starView.rating = viewModel.rating
+        // Star rating
+        starView.rating  = viewModel.rating
         ratingLabel.text = viewModel.formattedRating
         let ratingRow = UIStackView(arrangedSubviews: [starView, ratingLabel, UIView()])
         ratingRow.axis = .horizontal
@@ -216,14 +219,14 @@ final class EntryDetailViewController: UIViewController {
         ratingRow.alignment = .center
         NSLayoutConstraint.activate([
             starView.heightAnchor.constraint(equalToConstant: 26),
-            starView.widthAnchor.constraint(equalToConstant: 154)   // 5 stars × 32 − 6 spacing
+            starView.widthAnchor.constraint(equalToConstant: 154)
         ])
         stack.addArrangedSubview(ratingRow)
 
-        // Privacy + date
-        updatePrivacyBadge()
+        // Visibility badge (tappable) + check-in date
+        updateVisibilityBadge()
         dateLabel.text = viewModel.formattedDate
-        let metaRow = UIStackView(arrangedSubviews: [privacyBadge, UIView(), dateLabel])
+        let metaRow = UIStackView(arrangedSubviews: [visibilityBadge, UIView(), dateLabel])
         metaRow.axis = .horizontal
         metaRow.alignment = .center
         stack.addArrangedSubview(metaRow)
@@ -241,26 +244,31 @@ final class EntryDetailViewController: UIViewController {
             stack.addArrangedSubview(commentCard)
         }
 
-        // Mini map — add to stack now; set region in viewDidAppear so the map has a real frame
+        // Mini map
         if let coord = viewModel.coordinate {
             let center = CLLocationCoordinate2D(latitude: coord.latitude, longitude: coord.longitude)
             pendingCoordinate = center
-
             let pin = MKPointAnnotation()
             pin.coordinate = center
             pin.title = viewModel.placeName
             miniMap.addAnnotation(pin)
-
             stack.addArrangedSubview(miniMap)
             miniMap.heightAnchor.constraint(equalToConstant: 160).isActive = true
         }
     }
 
-    private func updatePrivacyBadge() {
-        privacyBadge.text = "  \(viewModel.privacyText)  "
-        privacyBadge.backgroundColor = viewModel.isPublic
-            ? Theme.accentLight
-            : UIColor.systemRed.withAlphaComponent(0.12)
-        privacyBadge.textColor = viewModel.isPublic ? Theme.accent : .systemRed
+    private func updateVisibilityBadge() {
+        visibilityBadge.text = "  \(viewModel.visibilityText)  "
+        switch viewModel.visibility {
+        case .public:
+            visibilityBadge.backgroundColor = Theme.accentLight
+            visibilityBadge.textColor       = Theme.accent
+        case .friends:
+            visibilityBadge.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.12)
+            visibilityBadge.textColor       = .systemGreen
+        case .private:
+            visibilityBadge.backgroundColor = UIColor.systemRed.withAlphaComponent(0.12)
+            visibilityBadge.textColor       = .systemRed
+        }
     }
 }

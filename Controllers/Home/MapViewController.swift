@@ -15,8 +15,8 @@ final class EntryAnnotation: NSObject, MKAnnotation {
     init(entry: FoodEntry) {
         self.entry = entry
         self.coordinate = entry.coordinate ?? CLLocationCoordinate2D()
-        self.title    = "\(entry.category.emoji) \(entry.name)"
-        self.subtitle = entry.placeName
+        self.title    = entry.placeName.isEmpty ? entry.category.emoji : "\(entry.category.emoji) \(entry.placeName)"
+        self.subtitle = entry.category.rawValue
         super.init()
     }
 }

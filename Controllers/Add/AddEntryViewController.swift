@@ -1,6 +1,6 @@
 // MARK: – MVVM | View
-// Form for creating or editing a FoodEntry. Writes user input to AddEntryViewModel
-// and listens for save/validation outcomes via closures. No DataManager access here.
+// Form for creating or editing a FoodEntry.
+// Fields: photo, place, category, rating, check-in date, comment, visibility, location.
 
 import UIKit
 import CoreLocation
@@ -8,7 +8,7 @@ import MapKit
 
 final class AddEntryViewController: UIViewController {
 
-    // MARK: – MVVM wiring
+    // MARK: – MVVM
 
     private let viewModel: AddEntryViewModel
 
@@ -57,14 +57,12 @@ final class AddEntryViewController: UIViewController {
         return iv
     }()
 
-    private let nameField  = AddEntryViewController.makeField(placeholder: "e.g. Cappuccino")
     private let placeField = AddEntryViewController.makeField(placeholder: "e.g. Blue Bottle Coffee")
 
     private let categoryControl: UISegmentedControl = {
         let items = FoodCategory.allCases.map { $0.emoji }
         let sc = UISegmentedControl(items: items)
         sc.selectedSegmentIndex = 0
-        // 20% bigger emoji font
         let bigFont = UIFont.systemFont(ofSize: 17, weight: .regular)
         sc.setTitleTextAttributes([.font: bigFont], for: .normal)
         sc.setTitleTextAttributes([.font: bigFont], for: .selected)
@@ -79,6 +77,15 @@ final class AddEntryViewController: UIViewController {
         l.textColor = Theme.accent
         l.text = "–"
         return l
+    }()
+
+    private let checkInPicker: UIDatePicker = {
+        let dp = UIDatePicker()
+        dp.datePickerMode  = .dateAndTime
+        dp.preferredDatePickerStyle = .compact
+        dp.maximumDate     = Date()
+        dp.tintColor       = Theme.accent
+        return dp
     }()
 
     private let commentView: UITextView = {
@@ -100,7 +107,20 @@ final class AddEntryViewController: UIViewController {
         return l
     }()
 
-    private let privacySwitch  = UISwitch()
+    // Visibility: 0 = Private, 1 = Share (friends), 2 = Public
+    private let visibilityControl: UISegmentedControl = {
+        let sc = UISegmentedControl(items: ["🔒 Private", "👥 Share", "🌍 Public"])
+        sc.selectedSegmentIndex = 2
+        sc.selectedSegmentTintColor = Theme.accent
+        sc.setTitleTextAttributes(
+            [.foregroundColor: UIColor.white,
+             .font: UIFont.systemFont(ofSize: 12, weight: .semibold)], for: .selected)
+        sc.setTitleTextAttributes(
+            [.foregroundColor: Theme.accent,
+             .font: UIFont.systemFont(ofSize: 12)], for: .normal)
+        return sc
+    }()
+
     private let locationSwitch = UISwitch()
 
     private let locationStatusLabel: UILabel = {
@@ -128,19 +148,15 @@ final class AddEntryViewController: UIViewController {
         super.viewDidLoad()
         title = viewModel.isEditing ? "Edit Entry" : "New Entry"
         view.backgroundColor = .systemGroupedBackground
-
-        // Large title
         navigationController?.navigationBar.prefersLargeTitles = true
         navigationItem.largeTitleDisplayMode = .always
 
-        // Save button — starts disabled until required fields are filled
         let saveBtn = UIBarButtonItem(title: "Save", style: .done,
                                      target: self, action: #selector(saveTapped))
         saveBtn.tintColor = Theme.accent
         saveBtn.isEnabled = false
         navigationItem.rightBarButtonItem = saveBtn
 
-        // Cancel button
         let cancelBtn = UIBarButtonItem(title: "Cancel", style: .plain,
                                        target: self, action: #selector(cancelTapped))
         cancelBtn.tintColor = .secondaryLabel
@@ -157,8 +173,13 @@ final class AddEntryViewController: UIViewController {
     // MARK: – ViewModel bindings
 
     private func bindViewModel() {
+        viewModel.onSaving = { [weak self] in
+            self?.setSaveLoading(true)
+        }
+
         viewModel.onSaveSuccess = { [weak self] in
             guard let self else { return }
+            self.setSaveLoading(false)
             if self.viewModel.isEditing {
                 self.navigationController?.popViewController(animated: true)
             } else {
@@ -166,34 +187,71 @@ final class AddEntryViewController: UIViewController {
                 self.tabBarController?.selectedIndex = 0
             }
         }
+
+        viewModel.onSaveError = { [weak self] message in
+            guard let self else { return }
+            self.setSaveLoading(false)
+            // Entry is already saved locally — ask user what to do
+            let alert = UIAlertController(title: "Sync Failed", message: message, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "Keep Locally", style: .default) { [weak self] _ in
+                // Navigate away — data is not lost
+                guard let self else { return }
+                if self.viewModel.isEditing {
+                    self.navigationController?.popViewController(animated: true)
+                } else {
+                    self.clearForm()
+                    self.tabBarController?.selectedIndex = 0
+                }
+            })
+            alert.addAction(UIAlertAction(title: "Try Again", style: .cancel) { [weak self] _ in
+                self?.viewModel.save()
+            })
+            self.present(alert, animated: true)
+        }
+
         viewModel.onValidationError = { [weak self] message in
             guard let self else { return }
-            if message.contains("name") { self.shake(self.nameField) }
+            if message.contains("Place") { self.shake(self.placeField) }
             let alert = UIAlertController(title: "Oops", message: message, preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "OK", style: .default))
             self.present(alert, animated: true)
         }
     }
 
+    // MARK: – Loading state
+
+    private func setSaveLoading(_ loading: Bool) {
+        if loading {
+            let spinner = UIActivityIndicatorView(style: .medium)
+            spinner.startAnimating()
+            navigationItem.rightBarButtonItem = UIBarButtonItem(customView: spinner)
+        } else {
+            let saveBtn = UIBarButtonItem(title: "Save", style: .done,
+                                         target: self, action: #selector(saveTapped))
+            saveBtn.tintColor = Theme.accent
+            navigationItem.rightBarButtonItem = saveBtn
+        }
+        navigationItem.leftBarButtonItem?.isEnabled  = !loading
+        view.isUserInteractionEnabled = !loading
+    }
+
     // MARK: – Save button validation
 
     private func updateSaveButtonState() {
-        let nameOK   = !(nameField.text?.trimmingCharacters(in: .whitespaces).isEmpty ?? true)
         let placeOK  = !(placeField.text?.trimmingCharacters(in: .whitespaces).isEmpty ?? true)
         let ratingOK = starView.rating > 0
-        // category always has a selection; comment is optional
-        navigationItem.rightBarButtonItem?.isEnabled = nameOK && placeOK && ratingOK
+        navigationItem.rightBarButtonItem?.isEnabled = placeOK && ratingOK
     }
 
     // MARK: – Actions
 
     @objc private func saveTapped() {
-        viewModel.name      = nameField.text ?? ""
-        viewModel.placeName = placeField.text ?? ""
-        viewModel.category  = FoodCategory.allCases[categoryControl.selectedSegmentIndex]
-        viewModel.rating    = starView.rating
-        viewModel.comment   = commentView.text ?? ""
-        viewModel.isPublic  = privacySwitch.isOn
+        viewModel.placeName   = placeField.text ?? ""
+        viewModel.category    = FoodCategory.allCases[categoryControl.selectedSegmentIndex]
+        viewModel.rating      = starView.rating
+        viewModel.comment     = commentView.text ?? ""
+        viewModel.visibility  = EntryVisibility.from(segmentIndex: visibilityControl.selectedSegmentIndex)
+        viewModel.checkInDate = checkInPicker.date
         viewModel.save()
     }
 
@@ -201,7 +259,6 @@ final class AddEntryViewController: UIViewController {
         if viewModel.isEditing {
             navigationController?.popViewController(animated: true)
         } else {
-            // Clear so the form is fresh if user comes back
             clearForm()
         }
     }
@@ -254,21 +311,21 @@ final class AddEntryViewController: UIViewController {
     // MARK: – Form helpers
 
     private func populateFormFromViewModel() {
-        nameField.text  = viewModel.name
         placeField.text = viewModel.placeName
         categoryControl.selectedSegmentIndex = FoodCategory.allCases.firstIndex(of: viewModel.category) ?? 0
         starView.rating = viewModel.rating
         ratingValueLabel.text = viewModel.rating > 0 ? String(format: "%.1f", viewModel.rating) : "–"
         commentView.text = viewModel.comment
         commentPlaceholder.isHidden = !viewModel.comment.isEmpty
-        privacySwitch.isOn = viewModel.isPublic
+        visibilityControl.selectedSegmentIndex = viewModel.visibility.segmentIndex
+        checkInPicker.date = viewModel.checkInDate
 
         if let coord = viewModel.location {
             locationSwitch.isOn = true
             locationMapView.isHidden = false
             placePin(at: coord)
         } else if !viewModel.isEditing {
-            // Default location ON for new entries — map visible, pin drops when location arrives
+            // New entry: turn on location and request it
             locationSwitch.isOn = true
             locationMapView.isHidden = false
             locationManager.requestWhenInUseAuthorization()
@@ -288,22 +345,23 @@ final class AddEntryViewController: UIViewController {
         if locationMapView.annotations.isEmpty {
             locationMapView.addAnnotation(locationPin)
         }
+        // 300 feet ≈ 91 metres
         locationMapView.setRegion(
-            MKCoordinateRegion(center: coord, latitudinalMeters: 500, longitudinalMeters: 500),
+            MKCoordinateRegion(center: coord, latitudinalMeters: 91, longitudinalMeters: 91),
             animated: true
         )
         locationStatusLabel.text = String(format: "%.4f, %.4f", coord.latitude, coord.longitude)
     }
 
     private func clearForm() {
-        nameField.text  = ""
         placeField.text = ""
         categoryControl.selectedSegmentIndex = 0
         starView.rating = 0
         ratingValueLabel.text = "–"
         commentView.text = ""
         commentPlaceholder.isHidden = false
-        privacySwitch.isOn = viewModel.isPublic  // respect default
+        visibilityControl.selectedSegmentIndex = viewModel.visibility.segmentIndex
+        checkInPicker.date = Date()
         locationSwitch.isOn = true
         photoImageView.isHidden = true
         viewModel.selectedImage = nil
@@ -346,13 +404,10 @@ final class AddEntryViewController: UIViewController {
         mainStack.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(mainStack)
 
-        // Item Info — name/place with text change listeners
-        nameField.addTarget(self, action: #selector(textFieldChanged), for: .editingChanged)
+        // Place
         placeField.addTarget(self, action: #selector(textFieldChanged), for: .editingChanged)
-        mainStack.addArrangedSubview(makeCard(title: "Item Info", views: [
-            makeRow(label: "Name",  view: nameField),
-            makeDivider(),
-            makeRow(label: "Place", view: placeField)
+        mainStack.addArrangedSubview(makeCard(title: "Place", views: [
+            makeRow(label: "Where", view: placeField)
         ]))
 
         // Category
@@ -368,6 +423,11 @@ final class AddEntryViewController: UIViewController {
         ratingRow.alignment = .center
         mainStack.addArrangedSubview(makeCard(title: "Rating", views: [ratingRow]))
 
+        // Check In
+        mainStack.addArrangedSubview(makeCard(title: "Check In", views: [
+            makeRow(label: "Date & Time", view: checkInPicker)
+        ]))
+
         // Comment
         commentView.delegate = self
         commentView.addSubview(commentPlaceholder)
@@ -378,20 +438,18 @@ final class AddEntryViewController: UIViewController {
         commentView.heightAnchor.constraint(equalToConstant: 90).isActive = true
         mainStack.addArrangedSubview(makeCard(title: "Comment", views: [commentView]))
 
-        // Privacy — default from Settings
-        privacySwitch.isOn = viewModel.isPublic
-        privacySwitch.onTintColor = Theme.accent
-        let privacyNote = UILabel()
-        privacyNote.text = "When off, only you can see this entry."
-        privacyNote.font = .systemFont(ofSize: 12)
-        privacyNote.textColor = .secondaryLabel
-        privacyNote.numberOfLines = 0
-        mainStack.addArrangedSubview(makeCard(title: "Privacy", views: [
-            makeRow(label: "Public rating & comment", view: privacySwitch),
-            privacyNote
+        // Visibility
+        let visibilityNote = UILabel()
+        visibilityNote.text = "Share: visible to friends only. Public: visible to everyone."
+        visibilityNote.font = .systemFont(ofSize: 12)
+        visibilityNote.textColor = .secondaryLabel
+        visibilityNote.numberOfLines = 0
+        mainStack.addArrangedSubview(makeCard(title: "Visibility", views: [
+            visibilityControl,
+            visibilityNote
         ]))
 
-        // Location — ON by default; map + draggable pin let the user refine the spot
+        // Location
         locationSwitch.isOn = true
         locationSwitch.onTintColor = Theme.accent
         locationSwitch.addTarget(self, action: #selector(locationToggled), for: .valueChanged)
@@ -401,7 +459,7 @@ final class AddEntryViewController: UIViewController {
             UILongPressGestureRecognizer(target: self, action: #selector(mapLongPressed(_:)))
         )
         mainStack.addArrangedSubview(makeCard(title: "Location", views: [
-            makeRow(label: "Attach current location", view: locationSwitch),
+            makeRow(label: "Attach location", view: locationSwitch),
             locationStatusLabel,
             locationMapView
         ]))
@@ -427,14 +485,12 @@ final class AddEntryViewController: UIViewController {
 
     // MARK: – Helpers
 
-    /// Creates a left-aligned text field. Label hugs tight; field expands to fill the row.
     private static func makeField(placeholder: String) -> UITextField {
         let f = UITextField()
         f.placeholder = placeholder
         f.font = .systemFont(ofSize: 15)
         f.textAlignment = .left
         f.clearButtonMode = .whileEditing
-        // Allow the field to expand
         f.setContentHuggingPriority(.defaultLow, for: .horizontal)
         f.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return f
@@ -471,7 +527,6 @@ final class AddEntryViewController: UIViewController {
         let label = UILabel()
         label.text = text
         label.font = .systemFont(ofSize: 15)
-        // Label hugs its content; view (text field / switch) gets all remaining space
         label.setContentHuggingPriority(.required, for: .horizontal)
         label.setContentCompressionResistancePriority(.required, for: .horizontal)
         let row = UIStackView(arrangedSubviews: [label, view])
@@ -575,7 +630,8 @@ extension AddEntryViewController: CLLocationManagerDelegate {
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        if manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways {
+        if manager.authorizationStatus == .authorizedWhenInUse ||
+           manager.authorizationStatus == .authorizedAlways {
             if locationSwitch.isOn { manager.requestLocation() }
         }
     }

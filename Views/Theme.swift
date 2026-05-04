@@ -30,12 +30,12 @@ enum Theme {
 
     static func categoryColor(_ cat: FoodCategory) -> UIColor {
         switch cat {
-        case .food:    return UIColor(red: 1.00, green: 0.45, blue: 0.20, alpha: 1)
-        case .coffee:  return UIColor(red: 0.55, green: 0.33, blue: 0.18, alpha: 1)
-        case .drink:   return UIColor(red: 0.18, green: 0.48, blue: 0.95, alpha: 1)
-        case .dessert: return UIColor(red: 0.92, green: 0.25, blue: 0.52, alpha: 1)
-        case .snack:   return UIColor(red: 0.18, green: 0.72, blue: 0.52, alpha: 1)
-        case .other:   return UIColor(red: 0.44, green: 0.34, blue: 0.86, alpha: 1)
+        case .food:          return UIColor(red: 1.00, green: 0.45, blue: 0.20, alpha: 1) // orange
+        case .coffee:        return UIColor(red: 0.55, green: 0.33, blue: 0.18, alpha: 1) // brown
+        case .drink:         return UIColor(red: 0.18, green: 0.48, blue: 0.95, alpha: 1) // blue
+        case .dessert:       return UIColor(red: 0.92, green: 0.25, blue: 0.52, alpha: 1) // pink
+        case .entertainment: return UIColor(red: 0.55, green: 0.18, blue: 0.92, alpha: 1) // purple
+        case .other:         return UIColor(red: 0.44, green: 0.34, blue: 0.86, alpha: 1) // indigo
         }
     }
 }

@@ -108,17 +108,23 @@ extension ListViewController: UITableViewDataSource, UITableViewDelegate {
         }
         delete.image = UIImage(systemName: "trash")
 
-        let privacy = UIContextualAction(
-            style: .normal,
-            title: entry.isPublic ? "Make Private" : "Make Public"
-        ) { _, _, done in
+        let nextVisibility: EntryVisibility
+        let visibilityTitle: String
+        let visibilityIcon: String
+        switch entry.visibility {
+        case .public:  nextVisibility = .friends; visibilityTitle = "Share"; visibilityIcon = "person.2"
+        case .friends: nextVisibility = .private; visibilityTitle = "Make Private"; visibilityIcon = "lock"
+        case .private: nextVisibility = .public;  visibilityTitle = "Make Public";  visibilityIcon = "globe"
+        }
+
+        let privacy = UIContextualAction(style: .normal, title: visibilityTitle) { _, _, done in
             var updated = entry
-            updated.isPublic = !entry.isPublic
+            updated.visibility = nextVisibility
             DataManager.shared.update(updated)
             done(true)
         }
         privacy.backgroundColor = .systemIndigo
-        privacy.image = UIImage(systemName: entry.isPublic ? "lock" : "globe")
+        privacy.image = UIImage(systemName: visibilityIcon)
 
         return UISwipeActionsConfiguration(actions: [delete, privacy])
     }

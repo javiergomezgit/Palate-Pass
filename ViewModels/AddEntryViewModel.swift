@@ -3,37 +3,33 @@ import CoreLocation
 
 // MARK: – MVVM | ViewModel
 // Owns all form state and business logic for creating or editing a FoodEntry.
-// Validates input, drives saves through DataManager, and reports outcomes via closures.
+// Saves locally first, then uploads to Firestore + Storage via EntryService.
 
 final class AddEntryViewModel {
 
     // MARK: – Form state (View writes these)
 
-    var name: String = ""
-    var placeName: String = ""
-    var category: FoodCategory = .food
-    var rating: Double = 0
-    var comment: String = ""
-    // Reads the user's default privacy preference from Settings; falls back to public
-    var isPublic: Bool = UserDefaults.standard.object(forKey: "defaultPublic") == nil
-        ? true
-        : UserDefaults.standard.bool(forKey: "defaultPublic")
-    var location: CLLocationCoordinate2D?
+    var placeName:     String          = ""
+    var category:      FoodCategory    = .food
+    var rating:        Double          = 0
+    var comment:       String          = ""
+    var visibility:    EntryVisibility = AddEntryViewModel.defaultVisibility
+    var checkInDate:   Date            = Date()
+    var location:      CLLocationCoordinate2D?
     var selectedImage: UIImage?
 
-    // MARK: – Output (View binds to these)
+    // MARK: – Output callbacks
 
-    var onSaveSuccess: (() -> Void)?
+    var onSaveSuccess:     (() -> Void)?
     var onValidationError: ((String) -> Void)?
+    /// Fires just before the async upload starts — use it to show a spinner.
+    var onSaving:          (() -> Void)?
+    /// Fires if the cloud upload fails. Entry is already saved locally.
+    var onSaveError:       ((String) -> Void)?
 
     // MARK: – Read-only context
 
     var isEditing: Bool { editingEntry != nil }
-
-    var initialLocationText: String? {
-        guard let lat = editingEntry?.latitude, let lon = editingEntry?.longitude else { return nil }
-        return String(format: "%.4f, %.4f", lat, lon)
-    }
 
     var initialImage: UIImage? {
         guard let path = editingEntry?.imagePath else { return nil }
@@ -44,27 +40,34 @@ final class AddEntryViewModel {
 
     private let editingEntry: FoodEntry?
 
+    private static var defaultVisibility: EntryVisibility {
+        let obj = UserDefaults.standard.object(forKey: "defaultPublic")
+        guard let obj else { return .public }
+        return UserDefaults.standard.bool(forKey: "defaultPublic") ? .public : .private
+    }
+
     // MARK: – Init
 
     init(editing entry: FoodEntry? = nil) {
         editingEntry = entry
         guard let e = entry else { return }
-        name      = e.name
-        placeName = e.placeName
-        category  = e.category
-        rating    = e.rating
-        comment   = e.comment
-        isPublic  = e.isPublic
+        placeName   = e.placeName
+        category    = e.category
+        rating      = e.rating
+        comment     = e.comment
+        visibility  = e.visibility
+        checkInDate = e.checkInDate
         if let lat = e.latitude, let lon = e.longitude {
             location = CLLocationCoordinate2D(latitude: lat, longitude: lon)
         }
     }
 
-    // MARK: – Input (View calls this)
+    // MARK: – Save
 
     func save() {
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
-            onValidationError?("Item name is required.")
+        // 1. Validate
+        guard !placeName.trimmingCharacters(in: .whitespaces).isEmpty else {
+            onValidationError?("Place name is required.")
             return
         }
         guard rating > 0 else {
@@ -72,30 +75,44 @@ final class AddEntryViewModel {
             return
         }
 
-        var imagePath = editingEntry?.imagePath
+        // 2. Persist image locally so it's available offline
+        var localImagePath = editingEntry?.imagePath
         if let img = selectedImage {
-            imagePath = DataManager.shared.saveImage(img)
+            localImagePath = DataManager.shared.saveImage(img)
         }
 
+        let isNew = editingEntry == nil
         let entry = FoodEntry(
-            id:        editingEntry?.id ?? UUID(),
-            name:      name,
-            placeName: placeName,
-            category:  category,
-            rating:    rating,
-            comment:   comment,
-            isPublic:  isPublic,
-            latitude:  location?.latitude,
-            longitude: location?.longitude,
-            date:      editingEntry?.date ?? Date(),
-            imagePath: imagePath
+            id:          editingEntry?.id ?? UUID(),
+            placeName:   placeName,
+            category:    category,
+            rating:      rating,
+            comment:     comment,
+            visibility:  visibility,
+            latitude:    location?.latitude,
+            longitude:   location?.longitude,
+            checkInDate: checkInDate,
+            imagePath:   localImagePath
         )
 
-        if editingEntry != nil {
-            DataManager.shared.update(entry)
-        } else {
+        // 3. Save to local store immediately (fast, offline-safe)
+        if isNew {
             DataManager.shared.add(entry)
+        } else {
+            DataManager.shared.update(entry)
         }
-        onSaveSuccess?()
+
+        // 4. Signal the View to show a loading state
+        onSaving?()
+
+        // 5. Upload to Firebase (image → Storage, doc → Firestore)
+        EntryService.shared.save(entry, image: selectedImage, isNew: isNew) { [weak self] error in
+            if let error {
+                // Entry is safe locally — inform the View but don't block navigation
+                self?.onSaveError?("Saved locally. Cloud sync failed: \(error.localizedDescription)")
+            } else {
+                self?.onSaveSuccess?()
+            }
+        }
     }
 }

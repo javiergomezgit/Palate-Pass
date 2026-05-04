@@ -1,6 +1,6 @@
 // MARK: – MVVM | View
-// UITableViewCell that renders one FoodEntry. Accepts a model struct directly
-// because cells have no mutable state; the ViewModel selects which entries to show.
+// UITableViewCell that renders one FoodEntry.
+// Place name is the primary label. No item name field.
 
 import UIKit
 
@@ -43,22 +43,14 @@ final class EntryCell: UITableViewCell {
         return l
     }()
 
-    private let nameLabel: UILabel = {
+    // Place name is now the primary label
+    private let placeLabel: UILabel = {
         let l = UILabel()
         l.font = .systemFont(ofSize: 15, weight: .bold)
         l.numberOfLines = 1
         return l
     }()
 
-    private let placeLabel: UILabel = {
-        let l = UILabel()
-        l.font = .systemFont(ofSize: 12)
-        l.textColor = .secondaryLabel
-        l.numberOfLines = 1
-        return l
-    }()
-
-    // Star view wrapped in a horizontal stack so it never stretches to full cell width
     private let starView: StarRatingView = {
         let sv = StarRatingView()
         sv.isInteractive = false
@@ -73,7 +65,7 @@ final class EntryCell: UITableViewCell {
         return l
     }()
 
-    private let privacyLabel: UILabel = {
+    private let visibilityLabel: UILabel = {
         let l = UILabel()
         l.font = .systemFont(ofSize: 10, weight: .semibold)
         l.layer.cornerRadius = 7
@@ -105,22 +97,21 @@ final class EntryCell: UITableViewCell {
         backgroundColor = .clear
         selectionStyle  = .none
 
-        // Star row: star view left-pinned, spacer takes the rest → no horizontal stretch
         let starRow = UIStackView(arrangedSubviews: [starView, UIView()])
         starRow.axis = .horizontal
         starRow.alignment = .center
-        starRow.spacing = 0
 
-        let topRow = UIStackView(arrangedSubviews: [nameLabel, dateLabel])
+        // Top row: place (primary text) + date
+        let topRow = UIStackView(arrangedSubviews: [placeLabel, dateLabel])
         topRow.axis = .horizontal
         topRow.spacing = 6
         topRow.alignment = .center
 
-        let bottomRow = UIStackView(arrangedSubviews: [privacyLabel, UIView()])
+        let bottomRow = UIStackView(arrangedSubviews: [visibilityLabel, UIView()])
         bottomRow.axis = .horizontal
         bottomRow.spacing = 4
 
-        let textStack = UIStackView(arrangedSubviews: [topRow, placeLabel, starRow, commentLabel, bottomRow])
+        let textStack = UIStackView(arrangedSubviews: [topRow, starRow, commentLabel, bottomRow])
         textStack.axis = .vertical
         textStack.spacing = 4
         textStack.translatesAutoresizingMaskIntoConstraints = false
@@ -158,33 +149,46 @@ final class EntryCell: UITableViewCell {
     // MARK: – Configure
 
     func configure(with entry: FoodEntry) {
-        nameLabel.text  = entry.name
         placeLabel.text = entry.placeName.isEmpty ? "Unknown place" : entry.placeName
-        starView.rating = entry.rating
-        commentLabel.text    = entry.comment.isEmpty ? nil : "\"\(entry.comment)\""
-        commentLabel.isHidden = entry.comment.isEmpty
 
         let color = Theme.categoryColor(entry.category)
         categoryPill.text = " \(entry.category.emoji) "
         categoryPill.backgroundColor = color
 
-        privacyLabel.text            = entry.isPublic ? " 🌍 " : " 🔒 "
-        privacyLabel.backgroundColor = entry.isPublic
-            ? Theme.accentLight
-            : UIColor.systemRed.withAlphaComponent(0.12)
+        starView.rating = entry.rating
+
+        commentLabel.text    = entry.comment.isEmpty ? nil : "\"\(entry.comment)\""
+        commentLabel.isHidden = entry.comment.isEmpty
+
+        applyVisibility(entry.visibility)
 
         let fmt = DateFormatter()
         fmt.dateStyle = .medium
         fmt.timeStyle = .none
-        dateLabel.text = fmt.string(from: entry.date)
+        dateLabel.text = fmt.string(from: entry.checkInDate)
 
         if let path = entry.imagePath, let img = DataManager.shared.loadImage(named: path) {
-            thumbImageView.image    = img
+            thumbImageView.image     = img
             thumbImageView.tintColor = nil
+            thumbImageView.backgroundColor = .secondarySystemBackground
         } else {
-            thumbImageView.image    = UIImage(systemName: "fork.knife.circle.fill")
+            thumbImageView.image     = UIImage(systemName: "fork.knife.circle.fill")
             thumbImageView.tintColor = color.withAlphaComponent(0.7)
             thumbImageView.backgroundColor = color.withAlphaComponent(0.1)
+        }
+    }
+
+    private func applyVisibility(_ visibility: EntryVisibility) {
+        switch visibility {
+        case .public:
+            visibilityLabel.text            = " 🌍 "
+            visibilityLabel.backgroundColor = Theme.accentLight
+        case .friends:
+            visibilityLabel.text            = " 👥 "
+            visibilityLabel.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.12)
+        case .private:
+            visibilityLabel.text            = " 🔒 "
+            visibilityLabel.backgroundColor = UIColor.systemRed.withAlphaComponent(0.12)
         }
     }
 }
