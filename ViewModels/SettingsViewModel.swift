@@ -1,22 +1,59 @@
-import UIKit
-
 // MARK: – MVVM | ViewModel
-// Provides computed stats, settings mutations, and data operations for the Settings screen.
-// All UserDefaults and DataManager access lives here; the View only presents results.
+// Provides display values and mutations for the Settings screen.
+// Profile data is sourced from FirebaseAuth (live) + Firestore (extended profile).
+// Local DataManager is still used for entry stats until entries migrate to Firestore.
+
+import UIKit
+import FirebaseAuth
 
 final class SettingsViewModel {
 
-    // MARK: – Output (View binds to these)
+    // MARK: – Output callbacks
 
-    var onMessage: ((String) -> Void)?
-    var onExportReady: ((URL) -> Void)?
+    var onMessage:       ((String) -> Void)?
+    var onExportReady:   ((URL) -> Void)?
+    var onProfileLoaded: (() -> Void)?      // fires when Firestore profile arrives
+    var onSignOut:       (() -> Void)?
 
-    // MARK: – User profile
+    // MARK: – Cached Firestore profile
 
-    var username: String {
-        get { UserDefaults.standard.string(forKey: "username") ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: "username") }
+    private(set) var userProfile: UserProfile?
+
+    // MARK: – Profile: display name
+
+    /// Editable name shown in the Settings header.
+    /// Priority: Firestore displayName → email prefix → empty
+    var displayName: String {
+        get {
+            if let name = userProfile?.displayName, !name.isEmpty { return name }
+            return UserProfile.nameFromEmail(Auth.auth().currentUser?.email)
+        }
+        set {
+            let trimmed = newValue.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty, let uid = Auth.auth().currentUser?.uid else { return }
+
+            // 1. Update Firebase Auth profile (so other parts of the app stay in sync)
+            let request = Auth.auth().currentUser?.createProfileChangeRequest()
+            request?.displayName = trimmed
+            request?.commitChanges { _ in }
+
+            // 2. Update Firestore document
+            UserService.shared.updateDisplayName(trimmed, uid: uid)
+
+            // 3. Keep local cache in sync
+            userProfile?.displayName = trimmed
+        }
     }
+
+    var email: String { Auth.auth().currentUser?.email ?? "" }
+
+    var isEmailVerified: Bool { Auth.auth().currentUser?.isEmailVerified ?? false }
+
+    var memberSince: String { userProfile?.memberSinceText ?? "–" }
+
+    var authProvider: String { userProfile?.authProvider ?? "–" }
+
+    // MARK: – Avatar (local for now; will migrate to Firebase Storage)
 
     var avatarImage: UIImage? {
         guard let data = UserDefaults.standard.data(forKey: "avatarImageData") else { return nil }
@@ -28,7 +65,7 @@ final class SettingsViewModel {
         UserDefaults.standard.set(data, forKey: "avatarImageData")
     }
 
-    // MARK: – Computed display values
+    // MARK: – Entry stats
 
     var entryCount: Int { DataManager.shared.entries.count }
 
@@ -41,17 +78,17 @@ final class SettingsViewModel {
 
     var statsLine: String { "\(entryCount) entries · avg ⭐ \(averageRatingText)" }
 
+    // MARK: – Settings options
+
     var defaultPrivacyLabel: String {
         let isPublic = UserDefaults.standard.object(forKey: "defaultPublic") == nil
             ? true : UserDefaults.standard.bool(forKey: "defaultPublic")
-        return isPublic ? "Default: Public" : "Default: Private"
+        return isPublic ? "Public" : "Private"
     }
 
     var currentSortOrder: String {
         UserDefaults.standard.string(forKey: "sortOrder") ?? "Date (newest first)"
     }
-
-    // MARK: – Input (View calls these)
 
     func toggleDefaultPrivacy() {
         let current = UserDefaults.standard.object(forKey: "defaultPublic") == nil
@@ -65,17 +102,38 @@ final class SettingsViewModel {
         UserDefaults.standard.set(order, forKey: "sortOrder")
     }
 
+    // MARK: – Data operations
+
     func exportData() {
         guard
             let data = try? JSONEncoder().encode(DataManager.shared.entries),
             let json = String(data: data, encoding: .utf8)
         else { return }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("foodie_export.json")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("palatepass_export.json")
         try? json.write(to: url, atomically: true, encoding: .utf8)
         onExportReady?(url)
     }
 
     func deleteAllEntries() {
         DataManager.shared.entries.forEach { DataManager.shared.delete($0) }
+    }
+
+    // MARK: – Firestore profile
+
+    func loadProfile() {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        UserService.shared.fetchProfile(uid: uid) { [weak self] profile in
+            DispatchQueue.main.async {
+                self?.userProfile = profile
+                self?.onProfileLoaded?()
+            }
+        }
+    }
+
+    // MARK: – Sign out
+
+    func signOut() {
+        try? Auth.auth().signOut()
+        onSignOut?()
     }
 }

@@ -1,5 +1,5 @@
 import UIKit
-// import FirebaseAuth   ← uncomment after Firebase is configured
+import FirebaseAuth
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
@@ -20,10 +20,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let windowScene = scene as? UIWindowScene else { return }
         let window = UIWindow(windowScene: windowScene)
 
-        // After Firebase is configured, replace the line below with:
-        //   let isLoggedIn = Auth.auth().currentUser != nil
-        //   window.rootViewController = isLoggedIn ? MainTabBarController() : makeAuthNavigation()
-        window.rootViewController = makeAuthNavigation()
+       let isLoggedIn = Auth.auth().currentUser != nil
+       window.rootViewController = isLoggedIn ? MainTabBarController() : makeAuthNavigation()
 
         window.makeKeyAndVisible()
         self.window = window

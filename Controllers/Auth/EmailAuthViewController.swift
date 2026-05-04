@@ -1,9 +1,10 @@
 // MARK: – MVVM | View
-// Handles both sign-in and sign-up with email + password.
-// The mode toggle is at the top; confirm-password row shows only when signing up.
-// No Firebase calls yet — stubs marked TODO.
+// Handles both sign-in and sign-up with email + password via FirebaseAuth.
+// Mode toggle at the top; confirm-password row appears only when signing up.
 
 import UIKit
+import FirebaseAuth
+import FirebaseFirestore
 
 final class EmailAuthViewController: UIViewController {
 
@@ -29,6 +30,7 @@ final class EmailAuthViewController: UIViewController {
         let f = makeField(placeholder: "Email address", keyboard: .emailAddress)
         f.textContentType = .emailAddress
         f.autocapitalizationType = .none
+        f.autocorrectionType = .no
         return f
     }()
 
@@ -98,6 +100,11 @@ final class EmailAuthViewController: UIViewController {
         }
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        emailField.becomeFirstResponder()
+    }
+
     // MARK: – Mode
 
     private func applyMode() {
@@ -109,6 +116,9 @@ final class EmailAuthViewController: UIViewController {
         var config = actionButton.configuration
         config?.title = isSignUp ? "Create Account" : "Sign In"
         actionButton.configuration = config
+
+        // Password field content type differs by mode
+        passwordField.textContentType = isSignUp ? .newPassword : .password
         updateActionEnabled()
     }
 
@@ -121,48 +131,154 @@ final class EmailAuthViewController: UIViewController {
     @objc private func fieldsChanged() { updateActionEnabled() }
 
     private func updateActionEnabled() {
-        let emailOK    = !(emailField.text?.trimmingCharacters(in: .whitespaces).isEmpty ?? true)
+        let emailOK    = isValidEmail(emailField.text ?? "")
         let passwordOK = (passwordField.text?.count ?? 0) >= 6
         let confirmOK  = mode == .signIn || confirmField.text == passwordField.text
         actionButton.isEnabled = emailOK && passwordOK && confirmOK
-        actionButton.alpha = actionButton.isEnabled ? 1 : 0.5
+        actionButton.alpha     = actionButton.isEnabled ? 1 : 0.5
+    }
+
+    private func isValidEmail(_ email: String) -> Bool {
+        let trimmed = email.trimmingCharacters(in: .whitespaces)
+        return trimmed.contains("@") && trimmed.contains(".")
     }
 
     // MARK: – Actions
 
     @objc private func actionTapped() {
-        guard let email = emailField.text, let password = passwordField.text else { return }
+        guard
+            let email    = emailField.text?.trimmingCharacters(in: .whitespaces),
+            let password = passwordField.text
+        else { return }
+
         setLoading(true)
-        // TODO: call FirebaseAuth sign in / create user
-        // Auth.auth().signIn(withEmail: email, password: password) { ... }
-        // Auth.auth().createUser(withEmail: email, password: password) { ... }
-        print("[\(mode)] email=\(email), password length=\(password.count)")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.setLoading(false)
+
+        switch mode {
+        case .signIn:  signIn(email: email, password: password)
+        case .signUp:  createAccount(email: email, password: password)
+        }
+    }
+
+    // MARK: – Firebase: Sign In
+
+    private func signIn(email: String, password: String) {
+        Auth.auth().signIn(withEmail: email, password: password) { [weak self] result, error in
+            guard let self else { return }
+            self.setLoading(false)
+
+            if let error {
+                self.showAuthError(error)
+                return
+            }
+
+            // Keep lastSignInAt fresh in Firestore
+            if let uid = result?.user.uid {
+                UserService.shared.updateLastSignIn(uid: uid)
+            }
+
             SceneDelegate.current?.showMainApp()
         }
     }
 
+    // MARK: – Firebase: Create Account
+
+    private func createAccount(email: String, password: String) {
+        Auth.auth().createUser(withEmail: email, password: password) { [weak self] result, error in
+            guard let self else { return }
+            self.setLoading(false)
+
+            if let error {
+                self.showAuthError(error)
+                return
+            }
+
+            guard let user = result?.user else { return }
+
+            // Send verification email — non-blocking
+            user.sendEmailVerification { _ in }
+
+            // Write the user document to Firestore
+            UserService.shared.createProfile(for: user, provider: "email") { dbError in
+                if let dbError {
+                    print("⚠️ Firestore profile creation failed: \(dbError.localizedDescription)")
+                }
+            }
+
+            SceneDelegate.current?.showMainApp()
+        }
+    }
+
+    // MARK: – Firebase: Password Reset
+
     @objc private func forgotTapped() {
-        // TODO: call Auth.auth().sendPasswordReset(withEmail:)
         let alert = UIAlertController(title: "Reset Password",
-                                      message: "Enter your email to receive a reset link.",
+                                      message: "Enter your email and we'll send you a reset link.",
                                       preferredStyle: .alert)
         alert.addTextField { tf in
-            tf.placeholder = "Email address"
-            tf.keyboardType = .emailAddress
+            tf.placeholder       = "Email address"
+            tf.keyboardType      = .emailAddress
             tf.autocapitalizationType = .none
+            tf.autocorrectionType    = .no
+            tf.text = self.emailField.text   // pre-fill if already typed
         }
         alert.addAction(UIAlertAction(title: "Send", style: .default) { [weak self] _ in
-            guard let email = alert.textFields?.first?.text, !email.isEmpty else { return }
-            // TODO: Auth.auth().sendPasswordReset(withEmail: email)
-            print("Password reset requested for \(email)")
-            self?.present(UIAlertController.simpleAlert(title: "Check your inbox",
-                                                        message: "A reset link has been sent to \(email)."),
-                          animated: true)
+            guard
+                let self,
+                let email = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespaces),
+                !email.isEmpty
+            else { return }
+
+            Auth.auth().sendPasswordReset(withEmail: email) { error in
+                if let error {
+                    self.present(UIAlertController.simpleAlert(
+                        title: "Couldn't Send Reset",
+                        message: self.friendlyMessage(for: error)
+                    ), animated: true)
+                } else {
+                    self.present(UIAlertController.simpleAlert(
+                        title: "Check your inbox",
+                        message: "A reset link has been sent to \(email)."
+                    ), animated: true)
+                }
+            }
         })
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         present(alert, animated: true)
+    }
+
+    // MARK: – Error handling
+
+    private func showAuthError(_ error: Error) {
+        let message = friendlyMessage(for: error)
+        present(UIAlertController.simpleAlert(title: "Couldn't sign in", message: message),
+                animated: true)
+    }
+
+    /// Maps FirebaseAuth error codes to human-readable strings.
+    private func friendlyMessage(for error: Error) -> String {
+        let code = AuthErrorCode(rawValue: (error as NSError).code)
+        switch code {
+        case .invalidEmail:
+            return "That doesn't look like a valid email address."
+        case .emailAlreadyInUse:
+            return "An account already exists with this email. Try signing in instead."
+        case .weakPassword:
+            return "Your password is too weak. Use at least 6 characters."
+        case .wrongPassword:
+            return "Incorrect password. Please try again or reset your password."
+        case .userNotFound:
+            return "No account found with that email. Check the address or create an account."
+        case .userDisabled:
+            return "This account has been disabled. Please contact support."
+        case .tooManyRequests:
+            return "Too many failed attempts. Please wait a moment and try again."
+        case .networkError:
+            return "A network error occurred. Check your connection and try again."
+        case .invalidCredential:
+            return "Incorrect email or password. Please try again."
+        default:
+            return error.localizedDescription
+        }
     }
 
     // MARK: – Loading state
@@ -170,6 +286,7 @@ final class EmailAuthViewController: UIViewController {
     private func setLoading(_ loading: Bool) {
         loading ? spinner.startAnimating() : spinner.stopAnimating()
         actionButton.isUserInteractionEnabled = !loading
+        modeControl.isUserInteractionEnabled  = !loading
         var config = actionButton.configuration
         config?.title = loading ? "" : (mode == .signUp ? "Create Account" : "Sign In")
         actionButton.configuration = config
@@ -178,10 +295,10 @@ final class EmailAuthViewController: UIViewController {
     // MARK: – Layout
 
     private func layout() {
-        // Wrap confirmField inside confirmRow so we can hide the row + its spacing
+        // Wrap confirmField in a view so it can collapse without affecting card padding
         confirmRow.translatesAutoresizingMaskIntoConstraints = false
         let confirmLabel = UILabel()
-        confirmLabel.text = "Confirm password"
+        confirmLabel.text = "Confirm"
         confirmLabel.font = .systemFont(ofSize: 15)
         confirmLabel.setContentHuggingPriority(.required, for: .horizontal)
         let innerRow = UIStackView(arrangedSubviews: [confirmLabel, confirmField])
@@ -197,14 +314,11 @@ final class EmailAuthViewController: UIViewController {
             innerRow.bottomAnchor.constraint(equalTo: confirmRow.bottomAnchor),
         ])
 
-        // Fields card
-        let divider1 = makeDivider()
-        let divider2 = makeDivider()
         let fieldStack = UIStackView(arrangedSubviews: [
             makeRow(label: "Email",    field: emailField),
-            divider1,
+            makeDivider(),
             makeRow(label: "Password", field: passwordField),
-            divider2,
+            makeDivider(),
             confirmRow
         ])
         fieldStack.axis = .vertical
@@ -221,7 +335,6 @@ final class EmailAuthViewController: UIViewController {
             fieldStack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14),
         ])
 
-        // Spinner overlaps actionButton
         spinner.translatesAutoresizingMaskIntoConstraints = false
         actionButton.addSubview(spinner)
         NSLayoutConstraint.activate([
@@ -247,8 +360,8 @@ final class EmailAuthViewController: UIViewController {
 
     private static func makeField(placeholder: String, keyboard: UIKeyboardType) -> UITextField {
         let f = UITextField()
-        f.placeholder = placeholder
-        f.font = .systemFont(ofSize: 15)
+        f.placeholder  = placeholder
+        f.font         = .systemFont(ofSize: 15)
         f.keyboardType = keyboard
         f.clearButtonMode = .whileEditing
         f.setContentHuggingPriority(.defaultLow, for: .horizontal)

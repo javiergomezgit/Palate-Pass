@@ -1,5 +1,5 @@
 import UIKit
-// import FirebaseCore   ← uncomment after adding Firebase via SPM and adding GoogleService-Info.plist
+import FirebaseCore
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -8,7 +8,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
-        // FirebaseApp.configure()   ← uncomment together with the import above
+        FirebaseApp.configure()
         return true
     }
 

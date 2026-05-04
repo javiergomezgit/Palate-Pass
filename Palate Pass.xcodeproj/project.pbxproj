@@ -11,12 +11,14 @@
 		2282A86A2FA7FF4500E6F3F3 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 2282A8692FA7FF4500E6F3F3 /* FirebaseCore */; };
 		2282A86C2FA7FF4500E6F3F3 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 2282A86B2FA7FF4500E6F3F3 /* FirebaseFirestore */; };
 		2282A86E2FA7FF4500E6F3F3 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 2282A86D2FA7FF4500E6F3F3 /* FirebaseStorage */; };
+		229FA1352FA8170B005435DA /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 229FA1332FA8170B005435DA /* GoogleService-Info.plist */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		2282A86F2FA7FF7400E6F3F3 /* Palate Pass.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Palate Pass.entitlements"; sourceTree = "<group>"; };
 		2296129D2FA2CB2E0048B018 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		2299A8B72FA2C53100DC2907 /* Palate Pass.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Palate Pass.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		229FA1332FA8170B005435DA /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -79,6 +81,7 @@
 				2299A8FE2FA2C71600DC2907 /* Extras */,
 				2299A8B82FA2C53100DC2907 /* Products */,
 				2296129D2FA2CB2E0048B018 /* Info.plist */,
+				229FA1342FA8170B005435DA /* Security */,
 			);
 			sourceTree = "<group>";
 		};
@@ -88,6 +91,14 @@
 				2299A8B72FA2C53100DC2907 /* Palate Pass.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		229FA1342FA8170B005435DA /* Security */ = {
+			isa = PBXGroup;
+			children = (
+				229FA1332FA8170B005435DA /* GoogleService-Info.plist */,
+			);
+			path = Security;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -166,6 +177,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				229FA1352FA8170B005435DA /* GoogleService-Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
