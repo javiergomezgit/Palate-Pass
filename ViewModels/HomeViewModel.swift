@@ -1,18 +1,23 @@
 import Foundation
+import FirebaseAuth
 
 // MARK: – MVVM | ViewModel
 // Owns the filtered entry list for the Home tab (shared by ListViewController and MapViewController).
-// Observes DataManager and re-publishes changes through a closure so the Views never touch the data layer.
+// On init: shows local cache immediately, then fetches from Firestore in the background.
+// Manual refresh is available via fetchFromFirestore().
 
 final class HomeViewModel {
 
-    // MARK: – Output (View binds to these)
+    // MARK: – Output callbacks
 
-    /// Called on the main thread whenever the filtered entries change.
+    /// Called on the main thread whenever the filtered entries change (local or cloud).
     var onEntriesUpdated: (() -> Void)?
+    /// Called when a Firestore fetch fails. Local cache remains visible.
+    var onFetchError: ((String) -> Void)?
 
     private(set) var entries: [FoodEntry] = []
     private(set) var activeFilter: FoodCategory?
+    private(set) var isFetching = false
 
     // MARK: – Init
 
@@ -21,14 +26,45 @@ final class HomeViewModel {
             self, selector: #selector(reload),
             name: .entriesDidChange, object: nil
         )
-        reload()
+        reload()                // show local cache immediately
+        fetchFromFirestore()    // then sync from cloud
     }
 
-    // MARK: – Input (View calls these)
+    // MARK: – Input
 
     func applyFilter(_ category: FoodCategory?) {
         activeFilter = category
         reload()
+    }
+
+    /// Removes the entry from the local cache immediately, then deletes it from
+    /// Firestore in the background. The UI updates right away via NotificationCenter.
+    func delete(_ entry: FoodEntry) {
+        DataManager.shared.delete(entry)                          // local — instant
+        EntryService.shared.delete(entryId: entry.id.uuidString) // cloud — async
+    }
+
+    /// Downloads the current user's entries from Firestore and refreshes the list.
+    /// Safe to call multiple times (guards against concurrent fetches).
+    func fetchFromFirestore() {
+        guard !isFetching else { return }
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+
+        isFetching = true
+
+        EntryService.shared.fetchEntries(for: uid) { [weak self] result in
+            guard let self else { return }
+            self.isFetching = false
+
+            switch result {
+            case .success(let fetched):
+                DataManager.shared.replaceEntries(fetched)
+                // reload() fires automatically via NotificationCenter → entriesDidChange
+
+            case .failure(let error):
+                self.onFetchError?(error.localizedDescription)
+            }
+        }
     }
 
     // MARK: – Private
@@ -36,6 +72,6 @@ final class HomeViewModel {
     @objc private func reload() {
         let all = DataManager.shared.entries
         entries = activeFilter.map { cat in all.filter { $0.category == cat } } ?? all
-        onEntriesUpdated?()
+        DispatchQueue.main.async { self.onEntriesUpdated?() }
     }
 }

@@ -72,7 +72,8 @@ struct FoodEntry: Codable, Identifiable {
     var latitude:    Double?
     var longitude:   Double?
     var checkInDate: Date                // when the user visited / logged
-    var imagePath:   String?            // filename saved in Documents/
+    var imagePath:   String?            // filename saved in Documents/ (local entries)
+    var imageURL:    String?            // Firebase Storage download URL (cloud entries)
 
     var coordinate: CLLocationCoordinate2D? {
         guard let lat = latitude, let lon = longitude else { return nil }
@@ -89,7 +90,8 @@ struct FoodEntry: Codable, Identifiable {
         latitude:    Double?         = nil,
         longitude:   Double?         = nil,
         checkInDate: Date            = Date(),
-        imagePath:   String?         = nil
+        imagePath:   String?         = nil,
+        imageURL:    String?         = nil
     ) {
         self.id          = id
         self.placeName   = placeName
@@ -101,5 +103,6 @@ struct FoodEntry: Codable, Identifiable {
         self.longitude   = longitude
         self.checkInDate = checkInDate
         self.imagePath   = imagePath
+        self.imageURL    = imageURL
     }
 }

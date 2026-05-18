@@ -27,10 +27,17 @@ final class EntryDetailViewModel {
         return (lat, lon)
     }
 
+    /// Local image, available synchronously (nil for cloud-fetched entries).
     var photo: UIImage? {
         guard let path = entry.imagePath else { return nil }
         return DataManager.shared.loadImage(named: path)
     }
+
+    /// Remote Storage URL for entries fetched from Firestore (nil for locally-created entries).
+    var imageURL: String? { entry.imageURL }
+
+    /// True when the entry has any image — either local or remote.
+    var hasImage: Bool { entry.imagePath != nil || entry.imageURL != nil }
 
     var formattedDate: String {
         let fmt = DateFormatter()
@@ -75,6 +82,7 @@ final class EntryDetailViewModel {
     }
 
     func delete() {
-        DataManager.shared.delete(entry)
+        DataManager.shared.delete(entry)                                    // local — instant
+        EntryService.shared.delete(entryId: entry.id.uuidString)           // cloud — async
     }
 }

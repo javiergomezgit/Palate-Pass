@@ -25,8 +25,15 @@ final class ListViewController: UIViewController {
         tv.estimatedRowHeight = 90
         tv.dataSource = self
         tv.delegate = self
+        tv.refreshControl = refreshControl
         tv.translatesAutoresizingMaskIntoConstraints = false
         return tv
+    }()
+
+    private lazy var refreshControl: UIRefreshControl = {
+        let rc = UIRefreshControl()
+        rc.addTarget(self, action: #selector(handleRefresh), for: .valueChanged)
+        return rc
     }()
 
     private let emptyLabel: UILabel = {
@@ -62,7 +69,13 @@ final class ListViewController: UIViewController {
 
         // Bind to ViewModel output
         viewModel.onEntriesUpdated = { [weak self] in
+            self?.refreshControl.endRefreshing()
             self?.refreshUI()
+        }
+        viewModel.onFetchError = { [weak self] message in
+            self?.refreshControl.endRefreshing()
+            // Local cache stays visible; surface the error subtly via the nav bar title
+            self?.showFetchError(message)
         }
         refreshUI()
     }
@@ -72,6 +85,21 @@ final class ListViewController: UIViewController {
     private func refreshUI() {
         emptyLabel.isHidden = !viewModel.entries.isEmpty
         tableView.reloadData()
+    }
+
+    @objc private func handleRefresh() {
+        viewModel.fetchFromFirestore()
+    }
+
+    private func showFetchError(_ message: String) {
+        // Show a non-intrusive toast-style alert that auto-dismisses
+        let alert = UIAlertController(
+            title: "Sync Failed",
+            message: "Showing cached entries. \(message)",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
     }
 }
 
@@ -102,8 +130,8 @@ extension ListViewController: UITableViewDataSource, UITableViewDelegate {
     ) -> UISwipeActionsConfiguration? {
         let entry = viewModel.entries[indexPath.row]
 
-        let delete = UIContextualAction(style: .destructive, title: "Delete") { _, _, done in
-            DataManager.shared.delete(entry)
+        let delete = UIContextualAction(style: .destructive, title: "Delete") { [weak self] _, _, done in
+            self?.viewModel.delete(entry)
             done(true)
         }
         delete.image = UIImage(systemName: "trash")

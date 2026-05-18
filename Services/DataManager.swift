@@ -35,6 +35,14 @@ final class DataManager {
         notify()
     }
 
+    /// Replaces the entire local cache with data fetched from Firestore.
+    /// Already-sorted entries are written to UserDefaults and listeners are notified.
+    func replaceEntries(_ newEntries: [FoodEntry]) {
+        entries = newEntries
+        save()
+        notify()
+    }
+
     // MARK: – Image helpers
 
     func saveImage(_ image: UIImage) -> String? {

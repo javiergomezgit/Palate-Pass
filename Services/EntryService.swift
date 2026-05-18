@@ -48,6 +48,25 @@ final class EntryService {
         }
     }
 
+    // MARK: – Fetch (current user's entries)
+
+    /// Fetches all entries belonging to the signed-in user, sorted newest first.
+    func fetchEntries(for uid: String,
+                      completion: @escaping (Result<[FoodEntry], Error>) -> Void) {
+        db.collection("entries")
+            .whereField("userId", isEqualTo: uid)
+            .getDocuments { snapshot, error in
+                if let error {
+                    DispatchQueue.main.async { completion(.failure(error)) }
+                    return
+                }
+                let entries = (snapshot?.documents ?? [])
+                    .compactMap { FoodEntry(firestoreDocument: $0.data()) }
+                    .sorted { $0.checkInDate > $1.checkInDate }
+                DispatchQueue.main.async { completion(.success(entries)) }
+            }
+    }
+
     // MARK: – Delete
 
     func delete(entryId: String, completion: ((Error?) -> Void)? = nil) {
@@ -111,6 +130,37 @@ final class EntryService {
     private func serviceError(_ message: String) -> NSError {
         NSError(domain: "EntryService", code: 0,
                 userInfo: [NSLocalizedDescriptionKey: message])
+    }
+}
+
+// MARK: – Firestore document → FoodEntry
+
+fileprivate extension FoodEntry {
+    /// Failable init that maps a raw Firestore document dictionary to a FoodEntry.
+    /// Returns nil if any required field is missing or has an unexpected type.
+    init?(firestoreDocument doc: [String: Any]) {
+        guard
+            let idString   = doc["id"]        as? String,
+            let id         = UUID(uuidString: idString),
+            let placeName  = doc["placeName"] as? String,
+            let catRaw     = doc["category"]  as? String,
+            let category   = FoodCategory(rawValue: catRaw),
+            let rating     = doc["rating"]    as? Double,
+            let visRaw     = doc["visibility"] as? String,
+            let visibility = EntryVisibility(rawValue: visRaw)
+        else { return nil }
+
+        self.id          = id
+        self.placeName   = placeName
+        self.category    = category
+        self.rating      = rating
+        self.comment     = doc["comment"]   as? String ?? ""
+        self.visibility  = visibility
+        self.latitude    = doc["latitude"]  as? Double
+        self.longitude   = doc["longitude"] as? Double
+        self.checkInDate = (doc["checkInDate"] as? Timestamp)?.dateValue() ?? Date()
+        self.imagePath   = nil   // no local path for cloud-fetched entries
+        self.imageURL    = (doc["imageURLs"] as? [String])?.first  // first Storage download URL
     }
 }
 

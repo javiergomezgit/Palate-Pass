@@ -192,11 +192,30 @@ final class EntryDetailViewController: UIViewController {
     }
 
     private func populate() {
-        // Hero image
-        if let img = viewModel.photo {
-            heroImageView.image = img
+        // Hero image — add placeholder immediately, then fill in
+        if viewModel.hasImage {
             stack.addArrangedSubview(heroImageView)
             heroImageView.heightAnchor.constraint(equalToConstant: 220).isActive = true
+
+            if let img = viewModel.photo {
+                // Local image: available right away
+                heroImageView.image = img
+            } else if let urlString = viewModel.imageURL {
+                // Remote image: show spinner while loading
+                let spinner = UIActivityIndicatorView(style: .medium)
+                spinner.translatesAutoresizingMaskIntoConstraints = false
+                heroImageView.addSubview(spinner)
+                NSLayoutConstraint.activate([
+                    spinner.centerXAnchor.constraint(equalTo: heroImageView.centerXAnchor),
+                    spinner.centerYAnchor.constraint(equalTo: heroImageView.centerYAnchor)
+                ])
+                spinner.startAnimating()
+
+                ImageLoader.shared.load(urlString: urlString) { [weak self] image in
+                    spinner.removeFromSuperview()
+                    self?.heroImageView.image = image
+                }
+            }
         }
 
         // Category badge

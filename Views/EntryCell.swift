@@ -82,6 +82,18 @@ final class EntryCell: UITableViewCell {
         return l
     }()
 
+    // MARK: – Reuse / cancellation
+
+    /// Tracks the in-flight download so we can cancel it when the cell is reused.
+    private var imageTask: URLSessionDataTask?
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        imageTask?.cancel()
+        imageTask = nil
+        thumbImageView.image = nil
+    }
+
     // MARK: – Init
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
@@ -167,15 +179,52 @@ final class EntryCell: UITableViewCell {
         fmt.timeStyle = .none
         dateLabel.text = fmt.string(from: entry.checkInDate)
 
+        loadThumbnail(entry: entry, fallbackColor: color)
+    }
+
+    // MARK: – Image loading
+
+    private func loadThumbnail(entry: FoodEntry, fallbackColor: UIColor) {
+        // 1. Local image (created on this device)
         if let path = entry.imagePath, let img = DataManager.shared.loadImage(named: path) {
-            thumbImageView.image     = img
-            thumbImageView.tintColor = nil
-            thumbImageView.backgroundColor = .secondarySystemBackground
-        } else {
-            thumbImageView.image     = UIImage(systemName: "fork.knife.circle.fill")
-            thumbImageView.tintColor = color.withAlphaComponent(0.7)
-            thumbImageView.backgroundColor = color.withAlphaComponent(0.1)
+            applyThumbnail(img)
+            return
         }
+
+        // 2. Remote URL from Firebase Storage
+        if let urlString = entry.imageURL {
+            // Show placeholder while loading
+            applyPlaceholder(color: fallbackColor)
+
+            // Check in-memory cache first (no flicker on scroll-back)
+            if let cached = ImageLoader.shared.cachedImage(for: urlString) {
+                applyThumbnail(cached)
+                return
+            }
+
+            imageTask = ImageLoader.shared.load(urlString: urlString) { [weak self] image in
+                if let image {
+                    self?.applyThumbnail(image)
+                }
+                // If download fails, placeholder stays — no crash
+            }
+            return
+        }
+
+        // 3. No image at all
+        applyPlaceholder(color: fallbackColor)
+    }
+
+    private func applyThumbnail(_ image: UIImage) {
+        thumbImageView.image           = image
+        thumbImageView.tintColor       = nil
+        thumbImageView.backgroundColor = .secondarySystemBackground
+    }
+
+    private func applyPlaceholder(color: UIColor) {
+        thumbImageView.image           = UIImage(systemName: "fork.knife.circle.fill")
+        thumbImageView.tintColor       = color.withAlphaComponent(0.7)
+        thumbImageView.backgroundColor = color.withAlphaComponent(0.1)
     }
 
     private func applyVisibility(_ visibility: EntryVisibility) {
