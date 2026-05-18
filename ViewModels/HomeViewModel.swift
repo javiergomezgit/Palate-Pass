@@ -17,6 +17,7 @@ final class HomeViewModel {
 
     private(set) var entries: [FoodEntry] = []
     private(set) var activeFilter: FoodCategory?
+    private(set) var searchQuery: String = ""
     private(set) var isFetching = false
 
     // MARK: – Init
@@ -34,6 +35,11 @@ final class HomeViewModel {
 
     func applyFilter(_ category: FoodCategory?) {
         activeFilter = category
+        reload()
+    }
+
+    func applySearch(_ query: String) {
+        searchQuery = query
         reload()
     }
 
@@ -70,8 +76,24 @@ final class HomeViewModel {
     // MARK: – Private
 
     @objc private func reload() {
-        let all = DataManager.shared.entries
-        entries = activeFilter.map { cat in all.filter { $0.category == cat } } ?? all
+        var result = DataManager.shared.entries
+
+        // 1. Category filter
+        if let cat = activeFilter {
+            result = result.filter { $0.category == cat }
+        }
+
+        // 2. Search query — matches place name, comment, or category
+        let q = searchQuery.trimmingCharacters(in: .whitespaces)
+        if !q.isEmpty {
+            result = result.filter { entry in
+                entry.placeName.localizedCaseInsensitiveContains(q)
+                || entry.comment.localizedCaseInsensitiveContains(q)
+                || entry.category.rawValue.localizedCaseInsensitiveContains(q)
+            }
+        }
+
+        entries = result
         DispatchQueue.main.async { self.onEntriesUpdated?() }
     }
 }

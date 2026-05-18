@@ -34,6 +34,14 @@ final class HomeViewController: UIViewController {
         return sc
     }()
 
+    private lazy var searchController: UISearchController = {
+        let sc = UISearchController(searchResultsController: nil)
+        sc.searchResultsUpdater = self
+        sc.obscuresBackgroundDuringPresentation = false
+        sc.searchBar.placeholder = "Search place, category, comment…"
+        return sc
+    }()
+
     // MARK: – Lifecycle
 
     override func viewDidLoad() {
@@ -44,12 +52,25 @@ final class HomeViewController: UIViewController {
         navigationItem.titleView = segmentControl
         segmentControl.addTarget(self, action: #selector(segmentChanged), for: .valueChanged)
 
+        // Right: filter button
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "line.3.horizontal.decrease.circle"),
             style: .plain,
             target: self,
             action: #selector(showFilter)
         )
+
+        // Left: search button
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            image: UIImage(systemName: "magnifyingglass"),
+            style: .plain,
+            target: self,
+            action: #selector(activateSearch)
+        )
+
+        navigationItem.searchController = searchController
+        navigationItem.hidesSearchBarWhenScrolling = true
+        definesPresentationContext = true
 
         show(listVC)
     }
@@ -58,6 +79,11 @@ final class HomeViewController: UIViewController {
 
     @objc private func segmentChanged() {
         show(segmentControl.selectedSegmentIndex == 0 ? listVC : mapVC)
+    }
+
+    @objc private func activateSearch() {
+        searchController.isActive = true
+        searchController.searchBar.becomeFirstResponder()
     }
 
     @objc private func showFilter() {
@@ -89,5 +115,13 @@ final class HomeViewController: UIViewController {
         view.addSubview(child.view)
         child.didMove(toParent: self)
         activeChild = child
+    }
+}
+
+// MARK: – UISearchResultsUpdating
+
+extension HomeViewController: UISearchResultsUpdating {
+    func updateSearchResults(for searchController: UISearchController) {
+        viewModel.applySearch(searchController.searchBar.text ?? "")
     }
 }

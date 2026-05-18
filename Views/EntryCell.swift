@@ -82,6 +82,19 @@ final class EntryCell: UITableViewCell {
         return l
     }()
 
+    private let shareButton: UIButton = {
+        let b = UIButton(type: .system)
+        let img = UIImage(systemName: "square.and.arrow.up",
+                          withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .medium))
+        b.setImage(img, for: .normal)
+        b.tintColor = .tertiaryLabel
+        b.translatesAutoresizingMaskIntoConstraints = false
+        return b
+    }()
+
+    /// Called when the share button is tapped. Receives the cell's current thumbnail.
+    var onShare: ((UIImage?) -> Void)?
+
     // MARK: – Reuse / cancellation
 
     /// Tracks the in-flight download so we can cancel it when the cell is reused.
@@ -92,6 +105,11 @@ final class EntryCell: UITableViewCell {
         imageTask?.cancel()
         imageTask = nil
         thumbImageView.image = nil
+        onShare = nil
+    }
+
+    @objc private func shareTapped() {
+        onShare?(thumbImageView.image)
     }
 
     // MARK: – Init
@@ -128,10 +146,13 @@ final class EntryCell: UITableViewCell {
         textStack.spacing = 4
         textStack.translatesAutoresizingMaskIntoConstraints = false
 
+        shareButton.addTarget(self, action: #selector(shareTapped), for: .touchUpInside)
+
         contentView.addSubview(cardView)
         cardView.addSubview(thumbImageView)
         cardView.addSubview(categoryPill)
         cardView.addSubview(textStack)
+        cardView.addSubview(shareButton)
 
         NSLayoutConstraint.activate([
             cardView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
@@ -151,8 +172,15 @@ final class EntryCell: UITableViewCell {
             categoryPill.heightAnchor.constraint(equalToConstant: 18),
             categoryPill.widthAnchor.constraint(greaterThanOrEqualToConstant: 28),
 
+            // Share button — right edge, vertically centered
+            shareButton.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -12),
+            shareButton.centerYAnchor.constraint(equalTo: cardView.centerYAnchor),
+            shareButton.widthAnchor.constraint(equalToConstant: 28),
+            shareButton.heightAnchor.constraint(equalToConstant: 28),
+
+            // Text stack stops before the share button
             textStack.leadingAnchor.constraint(equalTo: thumbImageView.trailingAnchor, constant: 12),
-            textStack.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -12),
+            textStack.trailingAnchor.constraint(equalTo: shareButton.leadingAnchor, constant: -6),
             textStack.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 12),
             textStack.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -12)
         ])

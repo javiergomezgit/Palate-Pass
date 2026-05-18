@@ -83,12 +83,37 @@ final class ListViewController: UIViewController {
     // MARK: – Private
 
     private func refreshUI() {
-        emptyLabel.isHidden = !viewModel.entries.isEmpty
+        let isEmpty = viewModel.entries.isEmpty
+        emptyLabel.isHidden = !isEmpty
+        if isEmpty {
+            if viewModel.searchQuery.isEmpty {
+                emptyLabel.text = "No entries yet.\nTap + to add your first rating!"
+            } else {
+                emptyLabel.text = "No results for \"\(viewModel.searchQuery)\"."
+            }
+        }
         tableView.reloadData()
     }
 
     @objc private func handleRefresh() {
         viewModel.fetchFromFirestore()
+    }
+
+    private func shareEntry(_ entry: FoodEntry, image: UIImage?) {
+        let stars = String(repeating: "⭐", count: Int(entry.rating.rounded()))
+        var text = "Check out \(entry.placeName)! I rated it \(stars) (\(String(format: "%.1f", entry.rating))/5) on Palate Pass \(entry.category.emoji)"
+        if !entry.comment.isEmpty {
+            text += "\n\"\(entry.comment)\""
+        }
+
+        var items: [Any] = [text]
+        if let image { items.append(image) }
+
+        let ac = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        // iPad popover anchor — find the tapped cell's share button if possible
+        ac.popoverPresentationController?.sourceView = view
+        ac.popoverPresentationController?.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 0, height: 0)
+        present(ac, animated: true)
     }
 
     private func showFetchError(_ message: String) {
@@ -113,7 +138,11 @@ extension ListViewController: UITableViewDataSource, UITableViewDelegate {
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: EntryCell.reuseID, for: indexPath) as! EntryCell
-        cell.configure(with: viewModel.entries[indexPath.row])
+        let entry = viewModel.entries[indexPath.row]
+        cell.configure(with: entry)
+        cell.onShare = { [weak self] image in
+            self?.shareEntry(entry, image: image)
+        }
         return cell
     }
 
