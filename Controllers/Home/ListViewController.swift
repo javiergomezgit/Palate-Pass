@@ -67,15 +67,25 @@ final class ListViewController: UIViewController {
             emptyLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32)
         ])
 
-        // Bind to ViewModel output
+        let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+        tableView.addGestureRecognizer(longPress)
+
         viewModel.onEntriesUpdated = { [weak self] in
             self?.refreshControl.endRefreshing()
             self?.refreshUI()
         }
         viewModel.onFetchError = { [weak self] message in
             self?.refreshControl.endRefreshing()
-            // Local cache stays visible; surface the error subtly via the nav bar title
             self?.showFetchError(message)
+        }
+        viewModel.onPinLimitReached = { [weak self] in
+            let alert = UIAlertController(
+                title: "Pin Limit Reached",
+                message: "You can pin up to \(HomeViewModel.maxPins) entries. Unpin one to add another.",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            self?.present(alert, animated: true)
         }
         refreshUI()
     }
@@ -83,20 +93,44 @@ final class ListViewController: UIViewController {
     // MARK: – Private
 
     private func refreshUI() {
-        let isEmpty = viewModel.entries.isEmpty
-        emptyLabel.isHidden = !isEmpty
-        if isEmpty {
-            if viewModel.searchQuery.isEmpty {
-                emptyLabel.text = "No entries yet.\nTap + to add your first rating!"
-            } else {
-                emptyLabel.text = "No results for \"\(viewModel.searchQuery)\"."
-            }
+        let totalEmpty = viewModel.pinnedEntries.isEmpty && viewModel.entries.isEmpty
+        emptyLabel.isHidden = !totalEmpty
+        if totalEmpty {
+            emptyLabel.text = viewModel.searchQuery.isEmpty
+                ? "No entries yet.\nTap + to add your first rating!"
+                : "No results for \"\(viewModel.searchQuery)\"."
         }
         tableView.reloadData()
     }
 
     @objc private func handleRefresh() {
         viewModel.fetchFromFirestore()
+    }
+
+    @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began else { return }
+        let point = gesture.location(in: tableView)
+        guard let indexPath = tableView.indexPathForRow(at: point) else { return }
+        let entry = entryFor(indexPath)
+        let isPinned = viewModel.isPinned(entry)
+        let title = isPinned ? "Unpin \"\(entry.placeName)\"" : "Pin \"\(entry.placeName)\""
+        let actionTitle = isPinned ? "Unpin" : "📌 Pin to Top"
+
+        let alert = UIAlertController(title: title, message: nil, preferredStyle: .actionSheet)
+        alert.addAction(UIAlertAction(title: actionTitle, style: .default) { [weak self] _ in
+            self?.viewModel.togglePin(entry)
+        })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.popoverPresentationController?.sourceView = tableView
+        alert.popoverPresentationController?.sourceRect = tableView.rectForRow(at: indexPath)
+        present(alert, animated: true)
+    }
+
+    // Returns the FoodEntry for a given indexPath across both sections.
+    private func entryFor(_ indexPath: IndexPath) -> FoodEntry {
+        indexPath.section == 0 && !viewModel.pinnedEntries.isEmpty
+            ? viewModel.pinnedEntries[indexPath.row]
+            : viewModel.entries[indexPath.row]
     }
 
     private func shareEntry(_ entry: FoodEntry, image: UIImage?) {
@@ -132,13 +166,26 @@ final class ListViewController: UIViewController {
 
 extension ListViewController: UITableViewDataSource, UITableViewDelegate {
 
+    func numberOfSections(in tableView: UITableView) -> Int {
+        // Section 0 = Pinned (hidden when empty), Section 1 = All entries
+        viewModel.pinnedEntries.isEmpty ? 1 : 2
+    }
+
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        viewModel.entries.count
+        if !viewModel.pinnedEntries.isEmpty && section == 0 {
+            return viewModel.pinnedEntries.count
+        }
+        return viewModel.entries.count
+    }
+
+    func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        guard !viewModel.pinnedEntries.isEmpty else { return nil }
+        return section == 0 ? "📌 Pinned" : "My Ratings"
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: EntryCell.reuseID, for: indexPath) as! EntryCell
-        let entry = viewModel.entries[indexPath.row]
+        let entry = entryFor(indexPath)
         cell.configure(with: entry)
         cell.onShare = { [weak self] image in
             self?.shareEntry(entry, image: image)
@@ -148,7 +195,7 @@ extension ListViewController: UITableViewDataSource, UITableViewDelegate {
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        let entryVM = EntryDetailViewModel(entry: viewModel.entries[indexPath.row])
+        let entryVM = EntryDetailViewModel(entry: entryFor(indexPath))
         let detail = EntryDetailViewController(viewModel: entryVM)
         navigationController?.pushViewController(detail, animated: true)
     }
@@ -157,7 +204,7 @@ extension ListViewController: UITableViewDataSource, UITableViewDelegate {
         _ tableView: UITableView,
         trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
-        let entry = viewModel.entries[indexPath.row]
+        let entry = entryFor(indexPath)
 
         let delete = UIContextualAction(style: .destructive, title: "Delete") { [weak self] _, _, done in
             self?.viewModel.delete(entry)

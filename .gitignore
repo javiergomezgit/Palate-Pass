@@ -31,6 +31,24 @@ Podfile.lock
 
 # Firebase — never commit the service config
 GoogleService-Info.plist
+**/GoogleService-Info.plist
+
+# Certificates, keys, provisioning profiles
+*.p8
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+AuthKey_*.p8
+
+# Environment / secrets
+.env
+.env.*
+secrets.xcconfig
+*secret*
+*Secret*
+*credentials*
+*Credentials*
 
 # macOS
 .DS_Store

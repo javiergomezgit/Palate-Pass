@@ -8,14 +8,22 @@ import FirebaseAuth
 
 final class HomeViewModel {
 
+    static let maxPins = 3
+
     // MARK: – Output callbacks
 
     /// Called on the main thread whenever the filtered entries change (local or cloud).
     var onEntriesUpdated: (() -> Void)?
     /// Called when a Firestore fetch fails. Local cache remains visible.
     var onFetchError: ((String) -> Void)?
+    /// Called when the user tries to pin a 4th entry.
+    var onPinLimitReached: (() -> Void)?
 
+    /// Pinned entries in pin order (max 3). Respects active filter/search.
+    private(set) var pinnedEntries: [FoodEntry] = []
+    /// All non-pinned entries, sorted newest first. Respects active filter/search.
     private(set) var entries: [FoodEntry] = []
+
     private(set) var activeFilter: FoodCategory?
     private(set) var searchQuery: String = ""
     private(set) var isFetching = false
@@ -27,8 +35,9 @@ final class HomeViewModel {
             self, selector: #selector(reload),
             name: .entriesDidChange, object: nil
         )
-        reload()                // show local cache immediately
-        fetchFromFirestore()    // then sync from cloud
+        reload()
+        fetchFromFirestore()
+        fetchPinnedIDs()
     }
 
     // MARK: – Input
@@ -46,8 +55,29 @@ final class HomeViewModel {
     /// Removes the entry from the local cache immediately, then deletes it from
     /// Firestore in the background. The UI updates right away via NotificationCenter.
     func delete(_ entry: FoodEntry) {
-        DataManager.shared.delete(entry)                          // local — instant
-        EntryService.shared.delete(entryId: entry.id.uuidString) // cloud — async
+        DataManager.shared.unpin(entry)
+        DataManager.shared.delete(entry)
+        EntryService.shared.delete(entryId: entry.id.uuidString)
+        syncPinsToFirestore()
+    }
+
+    /// Pins or unpins an entry. Enforces the 3-pin cap via onPinLimitReached.
+    func togglePin(_ entry: FoodEntry) {
+        let id = entry.id.uuidString
+        if DataManager.shared.pinnedIDs.contains(id) {
+            DataManager.shared.unpin(entry)
+        } else {
+            guard DataManager.shared.pinnedIDs.count < HomeViewModel.maxPins else {
+                onPinLimitReached?()
+                return
+            }
+            DataManager.shared.pin(entry)
+        }
+        syncPinsToFirestore()
+    }
+
+    func isPinned(_ entry: FoodEntry) -> Bool {
+        DataManager.shared.pinnedIDs.contains(entry.id.uuidString)
     }
 
     /// Downloads the current user's entries from Firestore and refreshes the list.
@@ -75,15 +105,25 @@ final class HomeViewModel {
 
     // MARK: – Private
 
+    private func fetchPinnedIDs() {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        UserService.shared.fetchPinnedIDs(uid: uid) { ids in
+            DataManager.shared.replacePinnedIDs(ids)
+        }
+    }
+
+    private func syncPinsToFirestore() {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        UserService.shared.updatePinnedIDs(DataManager.shared.pinnedIDs, uid: uid)
+    }
+
     @objc private func reload() {
         var result = DataManager.shared.entries
 
-        // 1. Category filter
         if let cat = activeFilter {
             result = result.filter { $0.category == cat }
         }
 
-        // 2. Search query — matches place name, comment, or category
         let q = searchQuery.trimmingCharacters(in: .whitespaces)
         if !q.isEmpty {
             result = result.filter { entry in
@@ -93,7 +133,14 @@ final class HomeViewModel {
             }
         }
 
-        entries = result
+        let pinnedIDs = DataManager.shared.pinnedIDs
+        // Preserve pin order by sorting pinned entries by their index in pinnedIDs
+        pinnedEntries = result
+            .filter  { pinnedIDs.contains($0.id.uuidString) }
+            .sorted  { (pinnedIDs.firstIndex(of: $0.id.uuidString) ?? 0) <
+                       (pinnedIDs.firstIndex(of: $1.id.uuidString) ?? 0) }
+        entries = result.filter { !pinnedIDs.contains($0.id.uuidString) }
+
         DispatchQueue.main.async { self.onEntriesUpdated?() }
     }
 }

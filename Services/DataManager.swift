@@ -10,8 +10,13 @@ final class DataManager {
     static let shared = DataManager()
     private init() { load() }
 
-    private let entriesKey = "foodie_entries"
+    private let entriesKey  = "foodie_entries"
+    private let pinnedKey   = "foodie_pinned_ids"
+
     private(set) var entries: [FoodEntry] = []
+
+    /// Ordered list of pinned entry ID strings (max 3, index 0 = top).
+    private(set) var pinnedIDs: [String] = []
 
     // MARK: – CRUD
 
@@ -40,6 +45,30 @@ final class DataManager {
     func replaceEntries(_ newEntries: [FoodEntry]) {
         entries = newEntries
         save()
+        notify()
+    }
+
+    // MARK: – Pin management
+
+    /// Pins an entry (no-op if already pinned). Does NOT enforce the 3-pin cap — caller must check.
+    func pin(_ entry: FoodEntry) {
+        let id = entry.id.uuidString
+        guard !pinnedIDs.contains(id) else { return }
+        pinnedIDs.append(id)
+        savePins()
+        notify()
+    }
+
+    func unpin(_ entry: FoodEntry) {
+        pinnedIDs.removeAll { $0 == entry.id.uuidString }
+        savePins()
+        notify()
+    }
+
+    /// Replaces the entire pin list (used when syncing from Firestore).
+    func replacePinnedIDs(_ ids: [String]) {
+        pinnedIDs = ids
+        savePins()
         notify()
     }
 
@@ -79,12 +108,16 @@ final class DataManager {
         UserDefaults.standard.set(data, forKey: entriesKey)
     }
 
+    private func savePins() {
+        UserDefaults.standard.set(pinnedIDs, forKey: pinnedKey)
+    }
+
     private func load() {
-        guard
-            let data = UserDefaults.standard.data(forKey: entriesKey),
-            let saved = try? JSONDecoder().decode([FoodEntry].self, from: data)
-        else { return }
-        entries = saved
+        if let data = UserDefaults.standard.data(forKey: entriesKey),
+           let saved = try? JSONDecoder().decode([FoodEntry].self, from: data) {
+            entries = saved
+        }
+        pinnedIDs = UserDefaults.standard.stringArray(forKey: pinnedKey) ?? []
     }
 
     private func notify() {

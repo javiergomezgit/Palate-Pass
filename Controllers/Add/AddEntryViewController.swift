@@ -329,6 +329,11 @@ final class AddEntryViewController: UIViewController {
             locationSwitch.isOn = true
             locationMapView.isHidden = false
             locationManager.requestWhenInUseAuthorization()
+            // If permission already granted, the auth delegate won't fire — request directly
+            let status = locationManager.authorizationStatus
+            if status == .authorizedWhenInUse || status == .authorizedAlways {
+                locationManager.requestLocation()
+            }
         }
 
         if let img = viewModel.initialImage {

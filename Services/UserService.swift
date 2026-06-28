@@ -67,4 +67,21 @@ final class UserService {
     func updateFCMToken(_ token: String, uid: String) {
         usersCollection.document(uid).updateData(["fcmToken": token])
     }
+
+    // MARK: – Pinned entries
+
+    /// Overwrites the user's pinned entry ID list in Firestore.
+    func updatePinnedIDs(_ ids: [String], uid: String, completion: ((Error?) -> Void)? = nil) {
+        usersCollection.document(uid).setData(["pinnedEntryIDs": ids], merge: true) { error in
+            completion?(error)
+        }
+    }
+
+    /// Fetches the user's pinned entry IDs from Firestore.
+    func fetchPinnedIDs(uid: String, completion: @escaping ([String]) -> Void) {
+        usersCollection.document(uid).getDocument { snapshot, _ in
+            let ids = snapshot?.data()?["pinnedEntryIDs"] as? [String] ?? []
+            completion(ids)
+        }
+    }
 }
