@@ -214,13 +214,13 @@ final class EntryCell: UITableViewCell {
 
     private func loadThumbnail(entry: FoodEntry, fallbackColor: UIColor) {
         // 1. Local image (created on this device)
-        if let path = entry.imagePath, let img = DataManager.shared.loadImage(named: path) {
+        if let path = entry.imagePaths.first, let img = DataManager.shared.loadImage(named: path) {
             applyThumbnail(img)
             return
         }
 
         // 2. Remote URL from Firebase Storage
-        if let urlString = entry.imageURL {
+        if let urlString = entry.imageURLs.first {
             // Show placeholder while loading
             applyPlaceholder(color: fallbackColor)
 

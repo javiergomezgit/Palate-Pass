@@ -4,7 +4,7 @@
 import UIKit
 import MapKit
 
-final class EntryDetailViewController: UIViewController {
+final class EntryDetailViewController: UIViewController, UIScrollViewDelegate {
 
     // MARK: – MVVM
 
@@ -32,15 +32,26 @@ final class EntryDetailViewController: UIViewController {
         return sv
     }()
 
-    private let heroImageView: UIImageView = {
-        let iv = UIImageView()
-        iv.contentMode = .scaleAspectFill
-        iv.clipsToBounds = true
-        iv.layer.cornerRadius = 16
-        iv.backgroundColor = .secondarySystemBackground
-        iv.translatesAutoresizingMaskIntoConstraints = false
-        return iv
+    private let photoScrollView: UIScrollView = {
+        let sv = UIScrollView()
+        sv.isPagingEnabled = true
+        sv.showsHorizontalScrollIndicator = false
+        sv.layer.cornerRadius = 16
+        sv.clipsToBounds = true
+        sv.translatesAutoresizingMaskIntoConstraints = false
+        return sv
     }()
+
+    private let pageControl: UIPageControl = {
+        let pc = UIPageControl()
+        pc.currentPageIndicatorTintColor = Theme.accent
+        pc.pageIndicatorTintColor = Theme.accent.withAlphaComponent(0.3)
+        pc.hidesForSinglePage = true
+        pc.translatesAutoresizingMaskIntoConstraints = false
+        return pc
+    }()
+
+    private var photoScrollViewWidth: NSLayoutConstraint?
 
     private let categoryLabel: UILabel = {
         let l = UILabel()
@@ -192,29 +203,47 @@ final class EntryDetailViewController: UIViewController {
     }
 
     private func populate() {
-        // Hero image — add placeholder immediately, then fill in
+        // Photo gallery — paging scroll view
         if viewModel.hasImage {
-            stack.addArrangedSubview(heroImageView)
-            heroImageView.heightAnchor.constraint(equalToConstant: 220).isActive = true
+            stack.addArrangedSubview(photoScrollView)
+            photoScrollView.heightAnchor.constraint(equalToConstant: 220).isActive = true
+            photoScrollView.delegate = self
 
-            if let img = viewModel.photo {
-                // Local image: available right away
-                heroImageView.image = img
-            } else if let urlString = viewModel.imageURL {
-                // Remote image: show spinner while loading
-                let spinner = UIActivityIndicatorView(style: .medium)
-                spinner.translatesAutoresizingMaskIntoConstraints = false
-                heroImageView.addSubview(spinner)
-                NSLayoutConstraint.activate([
-                    spinner.centerXAnchor.constraint(equalTo: heroImageView.centerXAnchor),
-                    spinner.centerYAnchor.constraint(equalTo: heroImageView.centerYAnchor)
-                ])
-                spinner.startAnimating()
+            let localPhotos  = viewModel.localPhotos
+            let remoteURLs   = viewModel.remoteImageURLs
+            let count        = max(localPhotos.count, remoteURLs.count)
+            pageControl.numberOfPages = count
 
-                ImageLoader.shared.load(urlString: urlString) { [weak self] image in
-                    spinner.removeFromSuperview()
-                    self?.heroImageView.image = image
+            // Build image views inside the scroll view after layout
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                let w = self.photoScrollView.bounds.width
+                self.photoScrollView.contentSize = CGSize(width: w * CGFloat(count), height: 220)
+
+                for i in 0..<count {
+                    let iv = UIImageView(frame: CGRect(x: w * CGFloat(i), y: 0, width: w, height: 220))
+                    iv.contentMode = .scaleAspectFill
+                    iv.clipsToBounds = true
+                    iv.backgroundColor = .secondarySystemBackground
+                    self.photoScrollView.addSubview(iv)
+
+                    if i < localPhotos.count {
+                        iv.image = localPhotos[i]
+                    } else if i < remoteURLs.count {
+                        let spinner = UIActivityIndicatorView(style: .medium)
+                        spinner.center = CGPoint(x: w / 2, y: 110)
+                        iv.addSubview(spinner)
+                        spinner.startAnimating()
+                        ImageLoader.shared.load(urlString: remoteURLs[i]) { image in
+                            spinner.removeFromSuperview()
+                            iv.image = image
+                        }
+                    }
                 }
+            }
+
+            if count > 1 {
+                stack.addArrangedSubview(pageControl)
             }
         }
 
@@ -274,6 +303,14 @@ final class EntryDetailViewController: UIViewController {
             stack.addArrangedSubview(miniMap)
             miniMap.heightAnchor.constraint(equalToConstant: 160).isActive = true
         }
+    }
+
+    // MARK: – UIScrollViewDelegate (photo paging)
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard scrollView === photoScrollView, photoScrollView.bounds.width > 0 else { return }
+        let page = Int((scrollView.contentOffset.x / photoScrollView.bounds.width).rounded())
+        pageControl.currentPage = page
     }
 
     private func updateVisibilityBadge() {

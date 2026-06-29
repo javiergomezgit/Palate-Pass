@@ -34,7 +34,7 @@ final class DataManager {
     }
 
     func delete(_ entry: FoodEntry) {
-        if let path = entry.imagePath { deleteImage(named: path) }
+        entry.imagePaths.forEach { deleteImage(named: $0) }
         entries.removeAll { $0.id == entry.id }
         save()
         notify()

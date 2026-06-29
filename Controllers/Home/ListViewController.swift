@@ -110,8 +110,8 @@ final class ListViewController: UIViewController {
     @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
         guard gesture.state == .began else { return }
         let point = gesture.location(in: tableView)
-        guard let indexPath = tableView.indexPathForRow(at: point) else { return }
-        let entry = entryFor(indexPath)
+        guard let indexPath = tableView.indexPathForRow(at: point),
+              let entry = entryFor(indexPath) else { return }
         let isPinned = viewModel.isPinned(entry)
         let title = isPinned ? "Unpin \"\(entry.placeName)\"" : "Pin \"\(entry.placeName)\""
         let actionTitle = isPinned ? "Unpin" : "📌 Pin to Top"
@@ -127,10 +127,14 @@ final class ListViewController: UIViewController {
     }
 
     // Returns the FoodEntry for a given indexPath across both sections.
-    private func entryFor(_ indexPath: IndexPath) -> FoodEntry {
-        indexPath.section == 0 && !viewModel.pinnedEntries.isEmpty
-            ? viewModel.pinnedEntries[indexPath.row]
-            : viewModel.entries[indexPath.row]
+    private func entryFor(_ indexPath: IndexPath) -> FoodEntry? {
+        if indexPath.section == 0 && !viewModel.pinnedEntries.isEmpty {
+            guard indexPath.row < viewModel.pinnedEntries.count else { return nil }
+            return viewModel.pinnedEntries[indexPath.row]
+        } else {
+            guard indexPath.row < viewModel.entries.count else { return nil }
+            return viewModel.entries[indexPath.row]
+        }
     }
 
     private func shareEntry(_ entry: FoodEntry, image: UIImage?) {
@@ -185,7 +189,7 @@ extension ListViewController: UITableViewDataSource, UITableViewDelegate {
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: EntryCell.reuseID, for: indexPath) as! EntryCell
-        let entry = entryFor(indexPath)
+        guard let entry = entryFor(indexPath) else { return cell }
         cell.configure(with: entry)
         cell.onShare = { [weak self] image in
             self?.shareEntry(entry, image: image)
@@ -195,7 +199,8 @@ extension ListViewController: UITableViewDataSource, UITableViewDelegate {
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        let entryVM = EntryDetailViewModel(entry: entryFor(indexPath))
+        guard let entry = entryFor(indexPath) else { return }
+        let entryVM = EntryDetailViewModel(entry: entry)
         let detail = EntryDetailViewController(viewModel: entryVM)
         navigationController?.pushViewController(detail, animated: true)
     }
@@ -204,7 +209,7 @@ extension ListViewController: UITableViewDataSource, UITableViewDelegate {
         _ tableView: UITableView,
         trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
-        let entry = entryFor(indexPath)
+        guard let entry = entryFor(indexPath) else { return nil }
 
         let delete = UIContextualAction(style: .destructive, title: "Delete") { [weak self] _, _, done in
             self?.viewModel.delete(entry)
@@ -231,5 +236,21 @@ extension ListViewController: UITableViewDataSource, UITableViewDelegate {
         privacy.image = UIImage(systemName: visibilityIcon)
 
         return UISwipeActionsConfiguration(actions: [delete, privacy])
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        leadingSwipeActionsConfigurationForRowAt indexPath: IndexPath
+    ) -> UISwipeActionsConfiguration? {
+        guard let entry = entryFor(indexPath), viewModel.isPinned(entry) else { return nil }
+
+        let unpin = UIContextualAction(style: .normal, title: "Unpin") { [weak self] _, _, done in
+            self?.viewModel.togglePin(entry)
+            done(true)
+        }
+        unpin.image = UIImage(systemName: "pin.slash.fill")
+        unpin.backgroundColor = .systemOrange
+
+        return UISwipeActionsConfiguration(actions: [unpin])
     }
 }

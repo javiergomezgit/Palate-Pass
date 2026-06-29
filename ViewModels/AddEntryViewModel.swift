@@ -15,8 +15,10 @@ final class AddEntryViewModel {
     var comment:       String          = ""
     var visibility:    EntryVisibility = AddEntryViewModel.defaultVisibility
     var checkInDate:   Date            = Date()
-    var location:      CLLocationCoordinate2D?
-    var selectedImage: UIImage?
+    var location:       CLLocationCoordinate2D?
+    var selectedImages: [UIImage] = []
+
+    static let maxPhotos = 5
 
     // MARK: – Output callbacks
 
@@ -31,9 +33,15 @@ final class AddEntryViewModel {
 
     var isEditing: Bool { editingEntry != nil }
 
-    var initialImage: UIImage? {
-        guard let path = editingEntry?.imagePath else { return nil }
-        return DataManager.shared.loadImage(named: path)
+    var initialImages: [UIImage] {
+        guard let e = editingEntry else { return [] }
+        return e.imagePaths.compactMap { DataManager.shared.loadImage(named: $0) }
+    }
+
+    /// Remote URLs to download when editing a cloud-fetched entry (no local paths available).
+    var initialImageURLs: [String] {
+        guard let e = editingEntry, e.imagePaths.isEmpty else { return [] }
+        return e.imageURLs
     }
 
     // MARK: – Private
@@ -75,10 +83,12 @@ final class AddEntryViewModel {
             return
         }
 
-        // 2. Persist image locally so it's available offline
-        var localImagePath = editingEntry?.imagePath
-        if let img = selectedImage {
-            localImagePath = DataManager.shared.saveImage(img)
+        // 2. Persist images locally so they're available offline
+        var localImagePaths: [String]
+        if selectedImages.isEmpty {
+            localImagePaths = editingEntry?.imagePaths ?? []
+        } else {
+            localImagePaths = selectedImages.compactMap { DataManager.shared.saveImage($0) }
         }
 
         let isNew = editingEntry == nil
@@ -92,7 +102,7 @@ final class AddEntryViewModel {
             latitude:    location?.latitude,
             longitude:   location?.longitude,
             checkInDate: checkInDate,
-            imagePath:   localImagePath
+            imagePaths:  localImagePaths
         )
 
         // 3. Save to local store immediately (fast, offline-safe)
@@ -106,7 +116,7 @@ final class AddEntryViewModel {
         onSaving?()
 
         // 5. Upload to Firebase (image → Storage, doc → Firestore)
-        EntryService.shared.save(entry, image: selectedImage, isNew: isNew) { [weak self] error in
+        EntryService.shared.save(entry, images: selectedImages, isNew: isNew) { [weak self] error in
             if let error {
                 // Entry is safe locally — inform the View but don't block navigation
                 self?.onSaveError?("Saved locally. Cloud sync failed: \(error.localizedDescription)")

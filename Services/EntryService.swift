@@ -18,10 +18,10 @@ final class EntryService {
 
     // MARK: – Save (create or update)
 
-    /// Uploads image (if any) then writes the Firestore document.
+    /// Uploads all images then writes the Firestore document.
     /// Calls completion on the main thread.
     func save(_ entry: FoodEntry,
-              image: UIImage?,
+              images: [UIImage],
               isNew: Bool,
               completion: @escaping (Error?) -> Void) {
 
@@ -30,21 +30,20 @@ final class EntryService {
             return
         }
 
-        if let image {
-            uploadImage(image, entryId: entry.id.uuidString, userId: uid) { [weak self] result in
-                switch result {
-                case .success(let url):
-                    self?.writeDocument(entry: entry, uid: uid,
-                                        imageURLs: [url.absoluteString],
-                                        isNew: isNew, completion: completion)
-                case .failure(let error):
-                    DispatchQueue.main.async { completion(error) }
-                }
+        guard !images.isEmpty else {
+            writeDocument(entry: entry, uid: uid, imageURLs: [], isNew: isNew, completion: completion)
+            return
+        }
+
+        uploadImages(images, entryId: entry.id.uuidString, userId: uid) { [weak self] result in
+            switch result {
+            case .success(let urls):
+                self?.writeDocument(entry: entry, uid: uid,
+                                    imageURLs: urls.map { $0.absoluteString },
+                                    isNew: isNew, completion: completion)
+            case .failure(let error):
+                DispatchQueue.main.async { completion(error) }
             }
-        } else {
-            writeDocument(entry: entry, uid: uid,
-                          imageURLs: [],
-                          isNew: isNew, completion: completion)
         }
     }
 
@@ -77,16 +76,41 @@ final class EntryService {
 
     // MARK: – Private: image upload
 
-    private func uploadImage(_ image: UIImage,
-                             entryId: String,
-                             userId: String,
-                             completion: @escaping (Result<URL, Error>) -> Void) {
+    /// Uploads all images sequentially, collecting download URLs. Fails fast on first error.
+    private func uploadImages(_ images: [UIImage],
+                              entryId: String,
+                              userId: String,
+                              completion: @escaping (Result<[URL], Error>) -> Void) {
+        var urls: [URL] = []
+        func uploadNext(index: Int) {
+            guard index < images.count else {
+                completion(.success(urls))
+                return
+            }
+            uploadSingleImage(images[index], index: index, entryId: entryId, userId: userId) { result in
+                switch result {
+                case .success(let url):
+                    urls.append(url)
+                    uploadNext(index: index + 1)
+                case .failure(let error):
+                    DispatchQueue.main.async { completion(.failure(error)) }
+                }
+            }
+        }
+        uploadNext(index: 0)
+    }
+
+    private func uploadSingleImage(_ image: UIImage,
+                                   index: Int,
+                                   entryId: String,
+                                   userId: String,
+                                   completion: @escaping (Result<URL, Error>) -> Void) {
         guard let data = image.jpegData(compressionQuality: 0.8) else {
-            completion(.failure(serviceError("Could not compress image.")))
+            completion(.failure(serviceError("Could not compress image \(index).")))
             return
         }
 
-        let ref = storage.reference().child("entries/\(userId)/\(entryId).jpg")
+        let ref = storage.reference().child("entries/\(userId)/\(entryId)_\(index).jpg")
         let meta = StorageMetadata()
         meta.contentType = "image/jpeg"
 
@@ -159,8 +183,8 @@ fileprivate extension FoodEntry {
         self.latitude    = doc["latitude"]  as? Double
         self.longitude   = doc["longitude"] as? Double
         self.checkInDate = (doc["checkInDate"] as? Timestamp)?.dateValue() ?? Date()
-        self.imagePath   = nil   // no local path for cloud-fetched entries
-        self.imageURL    = (doc["imageURLs"] as? [String])?.first  // first Storage download URL
+        self.imagePaths  = []
+        self.imageURLs   = doc["imageURLs"] as? [String] ?? []
     }
 }
 

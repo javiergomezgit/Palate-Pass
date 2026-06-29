@@ -28,33 +28,21 @@ final class AddEntryViewController: UIViewController {
     private let scrollView  = UIScrollView()
     private let contentView = UIView()
 
-    private let photoButton: UIButton = {
-        let btn = UIButton(type: .system)
-        var config = UIButton.Configuration.filled()
-        config.image = UIImage(systemName: "camera.fill",
-                               withConfiguration: UIImage.SymbolConfiguration(pointSize: 26, weight: .medium))
-        config.baseBackgroundColor = Theme.accentLight
-        config.baseForegroundColor = Theme.accent
-        config.cornerStyle = .large
-        config.title = "Add Photo"
-        config.imagePlacement = .top
-        config.imagePadding = 8
-        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attr in
-            var a = attr; a.font = UIFont.systemFont(ofSize: 13, weight: .medium); return a
-        }
-        btn.configuration = config
-        btn.translatesAutoresizingMaskIntoConstraints = false
-        return btn
-    }()
-
-    private let photoImageView: UIImageView = {
-        let iv = UIImageView()
-        iv.contentMode = .scaleAspectFill
-        iv.clipsToBounds = true
-        iv.layer.cornerRadius = 12
-        iv.isHidden = true
-        iv.translatesAutoresizingMaskIntoConstraints = false
-        return iv
+    private lazy var photoGallery: UICollectionView = {
+        let layout = UICollectionViewFlowLayout()
+        layout.scrollDirection = .horizontal
+        layout.itemSize = CGSize(width: 90, height: 90)
+        layout.minimumInteritemSpacing = 10
+        layout.sectionInset = UIEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
+        let cv = UICollectionView(frame: .zero, collectionViewLayout: layout)
+        cv.backgroundColor = .clear
+        cv.showsHorizontalScrollIndicator = false
+        cv.translatesAutoresizingMaskIntoConstraints = false
+        cv.register(PhotoGalleryAddCell.self,   forCellWithReuseIdentifier: PhotoGalleryAddCell.reuseID)
+        cv.register(PhotoGalleryImageCell.self, forCellWithReuseIdentifier: PhotoGalleryImageCell.reuseID)
+        cv.dataSource = self
+        cv.delegate   = self
+        return cv
     }()
 
     private let placeField = AddEntryViewController.makeField(placeholder: "e.g. Blue Bottle Coffee")
@@ -264,6 +252,14 @@ final class AddEntryViewController: UIViewController {
     }
 
     @objc private func pickPhoto() {
+        guard viewModel.selectedImages.count < AddEntryViewModel.maxPhotos else {
+            let alert = UIAlertController(title: "Photo Limit",
+                                          message: "You can add up to \(AddEntryViewModel.maxPhotos) photos.",
+                                          preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            present(alert, animated: true)
+            return
+        }
         let picker = UIImagePickerController()
         picker.delegate = self
         picker.allowsEditing = true
@@ -276,15 +272,14 @@ final class AddEntryViewController: UIViewController {
         alert.addAction(UIAlertAction(title: "Photo Library", style: .default) { [weak self] _ in
             picker.sourceType = .photoLibrary; self?.present(picker, animated: true)
         })
-        if viewModel.selectedImage != nil {
-            alert.addAction(UIAlertAction(title: "Remove Photo", style: .destructive) { [weak self] _ in
-                self?.viewModel.selectedImage = nil
-                self?.photoImageView.isHidden = true
-            })
-        }
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.popoverPresentationController?.sourceView = photoButton
+        alert.popoverPresentationController?.sourceView = photoGallery
         present(alert, animated: true)
+    }
+
+    private func removePhoto(at index: Int) {
+        viewModel.selectedImages.remove(at: index)
+        photoGallery.reloadData()
     }
 
     @objc private func locationToggled() {
@@ -336,9 +331,31 @@ final class AddEntryViewController: UIViewController {
             }
         }
 
-        if let img = viewModel.initialImage {
-            photoImageView.image = img
-            photoImageView.isHidden = false
+        // Pre-load existing images when editing
+        if viewModel.selectedImages.isEmpty {
+            let local = viewModel.initialImages
+            if !local.isEmpty {
+                viewModel.selectedImages = local
+                photoGallery.reloadData()
+            } else {
+                // Cloud-fetched entry: download remote images
+                let urls = viewModel.initialImageURLs
+                guard !urls.isEmpty else { photoGallery.reloadData(); return }
+                let group = DispatchGroup()
+                var downloaded = [Int: UIImage]()
+                for (i, url) in urls.enumerated() {
+                    group.enter()
+                    ImageLoader.shared.load(urlString: url) { image in
+                        if let image { downloaded[i] = image }
+                        group.leave()
+                    }
+                }
+                group.notify(queue: .main) { [weak self] in
+                    guard let self else { return }
+                    self.viewModel.selectedImages = (0..<urls.count).compactMap { downloaded[$0] }
+                    self.photoGallery.reloadData()
+                }
+            }
         }
 
         updateSaveButtonState()
@@ -368,9 +385,9 @@ final class AddEntryViewController: UIViewController {
         visibilityControl.selectedSegmentIndex = viewModel.visibility.segmentIndex
         checkInPicker.date = Date()
         locationSwitch.isOn = true
-        photoImageView.isHidden = true
-        viewModel.selectedImage = nil
+        viewModel.selectedImages = []
         viewModel.location = nil
+        photoGallery.reloadData()
         locationMapView.removeAnnotations(locationMapView.annotations)
         locationMapView.isHidden = false
         locationStatusLabel.text = "Requesting location…"
@@ -399,9 +416,7 @@ final class AddEntryViewController: UIViewController {
     }
 
     private func setupContent() {
-        contentView.addSubview(photoButton)
-        contentView.addSubview(photoImageView)
-        photoButton.addTarget(self, action: #selector(pickPhoto), for: .touchUpInside)
+        contentView.addSubview(photoGallery)
 
         let mainStack = UIStackView()
         mainStack.axis = .vertical
@@ -470,15 +485,11 @@ final class AddEntryViewController: UIViewController {
         ]))
 
         NSLayoutConstraint.activate([
-            photoButton.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 16),
-            photoButton.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-            photoButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
-            photoButton.heightAnchor.constraint(equalToConstant: 112),
-            photoImageView.topAnchor.constraint(equalTo: photoButton.topAnchor),
-            photoImageView.leadingAnchor.constraint(equalTo: photoButton.leadingAnchor),
-            photoImageView.trailingAnchor.constraint(equalTo: photoButton.trailingAnchor),
-            photoImageView.bottomAnchor.constraint(equalTo: photoButton.bottomAnchor),
-            mainStack.topAnchor.constraint(equalTo: photoButton.bottomAnchor, constant: 12),
+            photoGallery.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 16),
+            photoGallery.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            photoGallery.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            photoGallery.heightAnchor.constraint(equalToConstant: 90),
+            mainStack.topAnchor.constraint(equalTo: photoGallery.bottomAnchor, constant: 16),
             mainStack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
             mainStack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
             mainStack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -32)
@@ -591,11 +602,10 @@ extension AddEntryViewController: UITextViewDelegate {
 extension AddEntryViewController: UIImagePickerControllerDelegate, UINavigationControllerDelegate {
     func imagePickerController(_ picker: UIImagePickerController,
                                didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
-        let img = info[.editedImage] as? UIImage ?? info[.originalImage] as? UIImage
-        viewModel.selectedImage = img
-        photoImageView.image = img
-        photoImageView.isHidden = img == nil
         picker.dismiss(animated: true)
+        guard let img = info[.editedImage] as? UIImage ?? info[.originalImage] as? UIImage else { return }
+        viewModel.selectedImages.append(img)
+        photoGallery.reloadData()
     }
 }
 
@@ -640,4 +650,119 @@ extension AddEntryViewController: CLLocationManagerDelegate {
             if locationSwitch.isOn { manager.requestLocation() }
         }
     }
+}
+
+// MARK: – UICollectionViewDataSource / Delegate (photo gallery)
+
+extension AddEntryViewController: UICollectionViewDataSource, UICollectionViewDelegate {
+
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+        let photos = viewModel.selectedImages.count
+        return photos < AddEntryViewModel.maxPhotos ? photos + 1 : photos  // +1 for the Add cell
+    }
+
+    func collectionView(_ collectionView: UICollectionView,
+                        cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        let isAddCell = indexPath.item == viewModel.selectedImages.count
+        if isAddCell {
+            let cell = collectionView.dequeueReusableCell(
+                withReuseIdentifier: PhotoGalleryAddCell.reuseID, for: indexPath) as! PhotoGalleryAddCell
+            return cell
+        }
+        let cell = collectionView.dequeueReusableCell(
+            withReuseIdentifier: PhotoGalleryImageCell.reuseID, for: indexPath) as! PhotoGalleryImageCell
+        cell.configure(with: viewModel.selectedImages[indexPath.item])
+        cell.onRemove = { [weak self] in self?.removePhoto(at: indexPath.item) }
+        return cell
+    }
+
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        if indexPath.item == viewModel.selectedImages.count { pickPhoto() }
+    }
+}
+
+// MARK: – Photo gallery cells
+
+final class PhotoGalleryAddCell: UICollectionViewCell {
+
+    static let reuseID = "PhotoGalleryAddCell"
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        contentView.backgroundColor = Theme.accentLight
+        contentView.layer.cornerRadius = 12
+        contentView.clipsToBounds = true
+
+        let img = UIImageView(image: UIImage(systemName: "plus",
+                                             withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .medium)))
+        img.tintColor = Theme.accent
+        img.contentMode = .center
+        img.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(img)
+        NSLayoutConstraint.activate([
+            img.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
+            img.centerYAnchor.constraint(equalTo: contentView.centerYAnchor)
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+}
+
+final class PhotoGalleryImageCell: UICollectionViewCell {
+
+    static let reuseID = "PhotoGalleryImageCell"
+
+    var onRemove: (() -> Void)?
+
+    private let imageView: UIImageView = {
+        let iv = UIImageView()
+        iv.contentMode = .scaleAspectFill
+        iv.clipsToBounds = true
+        iv.layer.cornerRadius = 12
+        iv.translatesAutoresizingMaskIntoConstraints = false
+        return iv
+    }()
+
+    private let removeButton: UIButton = {
+        let b = UIButton(type: .system)
+        let cfg = UIImage.SymbolConfiguration(pointSize: 14, weight: .bold)
+        b.setImage(UIImage(systemName: "xmark.circle.fill", withConfiguration: cfg), for: .normal)
+        b.tintColor = .white
+        b.backgroundColor = UIColor.black.withAlphaComponent(0.55)
+        b.layer.cornerRadius = 11
+        b.clipsToBounds = true
+        b.translatesAutoresizingMaskIntoConstraints = false
+        return b
+    }()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        contentView.addSubview(imageView)
+        contentView.addSubview(removeButton)
+        NSLayoutConstraint.activate([
+            imageView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            imageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            imageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            removeButton.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 4),
+            removeButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -4),
+            removeButton.widthAnchor.constraint(equalToConstant: 22),
+            removeButton.heightAnchor.constraint(equalToConstant: 22)
+        ])
+        removeButton.addTarget(self, action: #selector(removeTapped), for: .touchUpInside)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func configure(with image: UIImage) {
+        imageView.image = image
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        imageView.image = nil
+        onRemove = nil
+    }
+
+    @objc private func removeTapped() { onRemove?() }
 }

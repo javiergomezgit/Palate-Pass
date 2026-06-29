@@ -27,17 +27,18 @@ final class EntryDetailViewModel {
         return (lat, lon)
     }
 
-    /// Local image, available synchronously (nil for cloud-fetched entries).
-    var photo: UIImage? {
-        guard let path = entry.imagePath else { return nil }
-        return DataManager.shared.loadImage(named: path)
+    /// Local images loaded synchronously (empty for cloud-fetched entries).
+    var localPhotos: [UIImage] {
+        entry.imagePaths.compactMap { DataManager.shared.loadImage(named: $0) }
     }
 
-    /// Remote Storage URL for entries fetched from Firestore (nil for locally-created entries).
-    var imageURL: String? { entry.imageURL }
+    /// Remote Storage URLs for entries fetched from Firestore.
+    var remoteImageURLs: [String] { entry.imageURLs }
 
     /// True when the entry has any image — either local or remote.
-    var hasImage: Bool { entry.imagePath != nil || entry.imageURL != nil }
+    var hasImage: Bool { !entry.imagePaths.isEmpty || !entry.imageURLs.isEmpty }
+
+    var totalImageCount: Int { max(entry.imagePaths.count, entry.imageURLs.count) }
 
     var formattedDate: String {
         let fmt = DateFormatter()
