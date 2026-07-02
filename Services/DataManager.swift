@@ -28,6 +28,8 @@ final class DataManager {
 
     func update(_ entry: FoodEntry) {
         guard let idx = entries.firstIndex(where: { $0.id == entry.id }) else { return }
+        let removedPaths = Set(entries[idx].imagePaths).subtracting(entry.imagePaths)
+        removedPaths.forEach { deleteImage(named: $0) }
         entries[idx] = entry
         save()
         notify()

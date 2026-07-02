@@ -84,6 +84,6 @@ final class EntryDetailViewModel {
 
     func delete() {
         DataManager.shared.delete(entry)                                    // local — instant
-        EntryService.shared.delete(entryId: entry.id.uuidString)           // cloud — async
+        EntryService.shared.delete(entry: entry)           // cloud — async
     }
 }

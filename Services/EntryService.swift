@@ -22,6 +22,7 @@ final class EntryService {
     /// Calls completion on the main thread.
     func save(_ entry: FoodEntry,
               images: [UIImage],
+              oldImageURLs: [String] = [],
               isNew: Bool,
               completion: @escaping (Error?) -> Void) {
 
@@ -31,9 +32,13 @@ final class EntryService {
         }
 
         guard !images.isEmpty else {
-            writeDocument(entry: entry, uid: uid, imageURLs: [], isNew: isNew, completion: completion)
+            // No new images — preserve existing Firebase URLs so they aren't wiped on edit
+            writeDocument(entry: entry, uid: uid, imageURLs: entry.imageURLs, isNew: isNew, completion: completion)
             return
         }
+
+        // Delete old Storage files before uploading replacements
+        deleteStorageFiles(urls: oldImageURLs)
 
         uploadImages(images, entryId: entry.id.uuidString, userId: uid) { [weak self] result in
             switch result {
@@ -68,9 +73,17 @@ final class EntryService {
 
     // MARK: – Delete
 
-    func delete(entryId: String, completion: ((Error?) -> Void)? = nil) {
-        db.collection("entries").document(entryId).delete { error in
+    func delete(entry: FoodEntry, completion: ((Error?) -> Void)? = nil) {
+        deleteStorageFiles(urls: entry.imageURLs)
+        db.collection("entries").document(entry.id.uuidString).delete { error in
             DispatchQueue.main.async { completion?(error) }
+        }
+    }
+
+    private func deleteStorageFiles(urls: [String]) {
+        for urlString in urls {
+            guard !urlString.isEmpty else { continue }
+            storage.reference(forURL: urlString).delete(completion: nil)
         }
     }
 

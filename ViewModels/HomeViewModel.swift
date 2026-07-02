@@ -57,7 +57,7 @@ final class HomeViewModel {
     func delete(_ entry: FoodEntry) {
         DataManager.shared.unpin(entry)
         DataManager.shared.delete(entry)
-        EntryService.shared.delete(entryId: entry.id.uuidString)
+        EntryService.shared.delete(entry: entry)
         syncPinsToFirestore()
     }
 

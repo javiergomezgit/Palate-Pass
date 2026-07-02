@@ -84,11 +84,12 @@ final class AddEntryViewModel {
         }
 
         // 2. Persist images locally so they're available offline
+        let imagesChanged = !selectedImages.isEmpty
         var localImagePaths: [String]
-        if selectedImages.isEmpty {
-            localImagePaths = editingEntry?.imagePaths ?? []
-        } else {
+        if imagesChanged {
             localImagePaths = selectedImages.compactMap { DataManager.shared.saveImage($0) }
+        } else {
+            localImagePaths = editingEntry?.imagePaths ?? []
         }
 
         let isNew = editingEntry == nil
@@ -102,7 +103,8 @@ final class AddEntryViewModel {
             latitude:    location?.latitude,
             longitude:   location?.longitude,
             checkInDate: checkInDate,
-            imagePaths:  localImagePaths
+            imagePaths:  localImagePaths,
+            imageURLs:   imagesChanged ? [] : (editingEntry?.imageURLs ?? [])
         )
 
         // 3. Save to local store immediately (fast, offline-safe)
@@ -116,7 +118,8 @@ final class AddEntryViewModel {
         onSaving?()
 
         // 5. Upload to Firebase (image → Storage, doc → Firestore)
-        EntryService.shared.save(entry, images: selectedImages, isNew: isNew) { [weak self] error in
+        let oldURLs = imagesChanged ? (editingEntry?.imageURLs ?? []) : []
+        EntryService.shared.save(entry, images: selectedImages, oldImageURLs: oldURLs, isNew: isNew) { [weak self] error in
             if let error {
                 // Entry is safe locally — inform the View but don't block navigation
                 self?.onSaveError?("Saved locally. Cloud sync failed: \(error.localizedDescription)")
