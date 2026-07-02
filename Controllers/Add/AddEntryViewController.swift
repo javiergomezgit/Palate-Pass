@@ -19,6 +19,11 @@ final class AddEntryViewController: UIViewController {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    // MARK: – Share Extension prefill (set before viewDidLoad)
+
+    /// When set by SceneDelegate (Share Extension flow), skips live location request.
+    var prefillCoordinate: CLLocationCoordinate2D?
+
     // MARK: – Location
 
     private let locationManager = CLLocationManager()
@@ -156,6 +161,15 @@ final class AddEntryViewController: UIViewController {
         configureLocationManager()
         bindViewModel()
         populateFormFromViewModel()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // Stack view doesn't reliably unhide arranged subviews set during viewDidLoad.
+        // Re-apply visibility and region once the view is fully on screen.
+        guard let coord = viewModel.location, locationSwitch.isOn else { return }
+        locationMapView.isHidden = false
+        placePin(at: coord)
     }
 
     // MARK: – ViewModel bindings
@@ -319,15 +333,23 @@ final class AddEntryViewController: UIViewController {
             locationSwitch.isOn = true
             locationMapView.isHidden = false
             placePin(at: coord)
+        } else if viewModel.isEditing {
+            // Entry was saved without a location — reflect that honestly
+            locationSwitch.isOn = false
+            locationMapView.isHidden = true
+            locationStatusLabel.text = "Location not attached"
         } else if !viewModel.isEditing {
-            // New entry: turn on location and request it
             locationSwitch.isOn = true
             locationMapView.isHidden = false
-            locationManager.requestWhenInUseAuthorization()
-            // If permission already granted, the auth delegate won't fire — request directly
-            let status = locationManager.authorizationStatus
-            if status == .authorizedWhenInUse || status == .authorizedAlways {
-                locationManager.requestLocation()
+            if let coord = prefillCoordinate {
+                // EXIF GPS from Share Extension — use it directly, skip live request
+                placePin(at: coord)
+            } else {
+                locationManager.requestWhenInUseAuthorization()
+                let status = locationManager.authorizationStatus
+                if status == .authorizedWhenInUse || status == .authorizedAlways {
+                    locationManager.requestLocation()
+                }
             }
         }
 

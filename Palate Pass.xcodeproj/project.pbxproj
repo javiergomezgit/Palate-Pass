@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		220A89692FF47E6E00C1348F /* PalatePassShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 220A894D2FF476DD00C1348F /* PalatePassShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		2282A8682FA7FF4500E6F3F3 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 2282A8672FA7FF4500E6F3F3 /* FirebaseAuth */; };
 		2282A86A2FA7FF4500E6F3F3 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 2282A8692FA7FF4500E6F3F3 /* FirebaseCore */; };
 		2282A86C2FA7FF4500E6F3F3 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 2282A86B2FA7FF4500E6F3F3 /* FirebaseFirestore */; };
@@ -43,7 +44,22 @@
 		22AECB5C2FECA32900C0D9B5 /* AddEntryViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22AECB5B2FECA32400C0D9B5 /* AddEntryViewController.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		220A89682FF47E5B00C1348F /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				220A89692FF47E6E00C1348F /* PalatePassShareExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		220A894D2FF476DD00C1348F /* PalatePassShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PalatePassShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		2282A86F2FA7FF7400E6F3F3 /* Palate Pass.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Palate Pass.entitlements"; sourceTree = "<group>"; };
 		2296129D2FA2CB2E0048B018 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		2299A8B72FA2C53100DC2907 /* Palate Pass.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Palate Pass.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -79,7 +95,35 @@
 		22AECB5B2FECA32400C0D9B5 /* AddEntryViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddEntryViewController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		220A89652FF47A6B00C1348F /* Exceptions for "PalatePassShareExtension" folder in "PalatePassShareExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 220A894C2FF476DD00C1348F /* PalatePassShareExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		220A894E2FF476DD00C1348F /* PalatePassShareExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				220A89652FF47A6B00C1348F /* Exceptions for "PalatePassShareExtension" folder in "PalatePassShareExtension" target */,
+			);
+			path = PalatePassShareExtension;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
 /* Begin PBXFrameworksBuildPhase section */
+		220A894A2FF476DD00C1348F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		2299A8B42FA2C53100DC2907 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -104,6 +148,7 @@
 				22AECAF52FECA12300C0D9B5 /* ViewModels */,
 				22AECAFA2FECA12300C0D9B5 /* Views */,
 				2282A86F2FA7FF7400E6F3F3 /* Palate Pass.entitlements */,
+				220A894E2FF476DD00C1348F /* PalatePassShareExtension */,
 				2299A8B82FA2C53100DC2907 /* Products */,
 				2296129D2FA2CB2E0048B018 /* Info.plist */,
 				229FA1342FA8170B005435DA /* Security */,
@@ -114,6 +159,7 @@
 			isa = PBXGroup;
 			children = (
 				2299A8B72FA2C53100DC2907 /* Palate Pass.app */,
+				220A894D2FF476DD00C1348F /* PalatePassShareExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -240,6 +286,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		220A894C2FF476DD00C1348F /* PalatePassShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 220A895C2FF476DD00C1348F /* Build configuration list for PBXNativeTarget "PalatePassShareExtension" */;
+			buildPhases = (
+				220A89492FF476DD00C1348F /* Sources */,
+				220A894A2FF476DD00C1348F /* Frameworks */,
+				220A894B2FF476DD00C1348F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				220A894E2FF476DD00C1348F /* PalatePassShareExtension */,
+			);
+			name = PalatePassShareExtension;
+			packageProductDependencies = (
+			);
+			productName = PalatePassShareExtension;
+			productReference = 220A894D2FF476DD00C1348F /* PalatePassShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		2299A8B62FA2C53100DC2907 /* Palate Pass */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 2299A8CA2FA2C53300DC2907 /* Build configuration list for PBXNativeTarget "Palate Pass" */;
@@ -247,6 +315,7 @@
 				2299A8B32FA2C53100DC2907 /* Sources */,
 				2299A8B42FA2C53100DC2907 /* Frameworks */,
 				2299A8B52FA2C53100DC2907 /* Resources */,
+				220A89682FF47E5B00C1348F /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
@@ -270,9 +339,12 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2640;
+				LastSwiftUpdateCheck = 2660;
 				LastUpgradeCheck = 2640;
 				TargetAttributes = {
+					220A894C2FF476DD00C1348F = {
+						CreatedOnToolsVersion = 26.6;
+					};
 					2299A8B62FA2C53100DC2907 = {
 						CreatedOnToolsVersion = 26.4.1;
 					};
@@ -296,11 +368,19 @@
 			projectRoot = "";
 			targets = (
 				2299A8B62FA2C53100DC2907 /* Palate Pass */,
+				220A894C2FF476DD00C1348F /* PalatePassShareExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		220A894B2FF476DD00C1348F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		2299A8B52FA2C53100DC2907 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -314,6 +394,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		220A89492FF476DD00C1348F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		2299A8B32FA2C53100DC2907 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -351,6 +438,66 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
+		220A89592FF476DD00C1348F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = PalatePassShareExtension/PalatePassShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SJK4QJY486;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PalatePassShareExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = PalatePassShareExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.jdev.palate-pass.shareextension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		220A895A2FF476DD00C1348F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = PalatePassShareExtension/PalatePassShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SJK4QJY486;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PalatePassShareExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = PalatePassShareExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.jdev.palate-pass.shareextension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		2299A8CB2FA2C53300DC2907 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -545,6 +692,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		220A895C2FF476DD00C1348F /* Build configuration list for PBXNativeTarget "PalatePassShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				220A89592FF476DD00C1348F /* Debug */,
+				220A895A2FF476DD00C1348F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		2299A8B22FA2C53100DC2907 /* Build configuration list for PBXProject "Palate Pass" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
