@@ -19,6 +19,10 @@ final class AddEntryViewController: UIViewController {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
     // MARK: – Share Extension prefill (set before viewDidLoad)
 
     /// When set by SceneDelegate (Share Extension flow), skips live location request.
@@ -114,14 +118,14 @@ final class AddEntryViewController: UIViewController {
         return sc
     }()
 
-    private let locationSwitch = UISwitch()
+    private let locationSearchField = AddEntryViewController.makeField(placeholder: "Search nearby business (optional)")
 
-    private let locationStatusLabel: UILabel = {
-        let l = UILabel()
-        l.font = .systemFont(ofSize: 12)
-        l.textColor = .secondaryLabel
-        l.text = "Requesting location…"
-        return l
+    private lazy var locationResultsStack: UIStackView = {
+        let sv = UIStackView()
+        sv.axis = .vertical
+        sv.spacing = 4
+        sv.isHidden = true
+        return sv
     }()
 
     private lazy var locationMapView: MKMapView = {
@@ -129,11 +133,25 @@ final class AddEntryViewController: UIViewController {
         mv.layer.cornerRadius = 12
         mv.clipsToBounds = true
         mv.isHidden = true
+        mv.showsUserLocation = true
+        mv.selectableMapFeatures = .pointsOfInterest
         mv.translatesAutoresizingMaskIntoConstraints = false
         return mv
     }()
 
+    private lazy var locateMeButton: MKUserTrackingButton = {
+        let btn = MKUserTrackingButton(mapView: locationMapView)
+        btn.layer.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.9).cgColor
+        btn.layer.cornerRadius = 6
+        btn.translatesAutoresizingMaskIntoConstraints = false
+        return btn
+    }()
+
     private let locationPin = MKPointAnnotation()
+
+    private var searchDebounceTimer: Timer?
+    private var currentLocalSearch: MKLocalSearch?
+    private var searchResults: [MKMapItem] = []
 
     // MARK: – Lifecycle
 
@@ -158,6 +176,7 @@ final class AddEntryViewController: UIViewController {
         setupScrollView()
         setupContent()
         addKeyboardDismissGesture()
+        registerKeyboardObservers()
         configureLocationManager()
         bindViewModel()
         populateFormFromViewModel()
@@ -167,7 +186,7 @@ final class AddEntryViewController: UIViewController {
         super.viewDidAppear(animated)
         // Stack view doesn't reliably unhide arranged subviews set during viewDidLoad.
         // Re-apply visibility and region once the view is fully on screen.
-        guard let coord = viewModel.location, locationSwitch.isOn else { return }
+        guard let coord = viewModel.location else { return }
         locationMapView.isHidden = false
         placePin(at: coord)
     }
@@ -296,25 +315,104 @@ final class AddEntryViewController: UIViewController {
         photoGallery.reloadData()
     }
 
-    @objc private func locationToggled() {
-        if locationSwitch.isOn {
-            locationManager.requestWhenInUseAuthorization()
-            locationManager.requestLocation()
-            locationStatusLabel.text = "Requesting location…"
-            locationMapView.isHidden = false
-        } else {
-            viewModel.location = nil
-            locationStatusLabel.text = "Location not attached"
-            locationMapView.isHidden = true
-            locationMapView.removeAnnotations(locationMapView.annotations)
+    @objc private func locationSearchFieldChanged() {
+        searchDebounceTimer?.invalidate()
+        let query = locationSearchField.text ?? ""
+        searchDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: false) { [weak self] _ in
+            self?.refreshLocationSuggestions(query: query)
         }
     }
 
-    @objc private func mapLongPressed(_ gesture: UILongPressGestureRecognizer) {
-        guard gesture.state == .began else { return }
-        let point = gesture.location(in: locationMapView)
-        let coord = locationMapView.convert(point, toCoordinateFrom: locationMapView)
-        placePin(at: coord)
+    @objc private func locationSearchFieldDidBeginEditing() {
+        // Show the 5 closest places immediately, before the user types anything.
+        if searchResults.isEmpty {
+            refreshLocationSuggestions(query: locationSearchField.text ?? "")
+        }
+        scrollLocationCardIntoView()
+    }
+
+    /// Empty query → nearby points of interest ranked by distance. Non-empty → named search, still ranked by distance.
+    private func refreshLocationSuggestions(query: String) {
+        currentLocalSearch?.cancel()
+        guard let coord = viewModel.location else {
+            searchResults = []
+            rebuildResultsStack()
+            return
+        }
+
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        let search: MKLocalSearch
+        if trimmed.isEmpty {
+            let request = MKLocalPointsOfInterestRequest(center: coord, radius: 1000)
+            request.pointOfInterestFilter = MKPointOfInterestFilter(including: [
+                .restaurant, .cafe, .bakery, .foodMarket, .brewery, .winery, .nightlife
+            ])
+            search = MKLocalSearch(request: request)
+        } else {
+            let request = MKLocalSearch.Request()
+            request.naturalLanguageQuery = trimmed
+            request.resultTypes = .pointOfInterest
+            request.region = MKCoordinateRegion(center: coord, latitudinalMeters: 5000, longitudinalMeters: 5000)
+            search = MKLocalSearch(request: request)
+        }
+
+        currentLocalSearch = search
+        search.start { [weak self] response, error in
+            guard let self else { return }
+            guard let items = response?.mapItems, error == nil else {
+                self.searchResults = []
+                self.rebuildResultsStack()
+                return
+            }
+            self.searchResults = self.sortedByDistance(items, from: coord)
+            self.rebuildResultsStack()
+        }
+    }
+
+    private func sortedByDistance(_ items: [MKMapItem], from coord: CLLocationCoordinate2D) -> [MKMapItem] {
+        let origin = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+        return items.sorted {
+            let d0 = CLLocation(latitude: $0.placemark.coordinate.latitude, longitude: $0.placemark.coordinate.longitude).distance(from: origin)
+            let d1 = CLLocation(latitude: $1.placemark.coordinate.latitude, longitude: $1.placemark.coordinate.longitude).distance(from: origin)
+            return d0 < d1
+        }
+    }
+
+    private func rebuildResultsStack() {
+        locationResultsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        guard !searchResults.isEmpty else {
+            locationResultsStack.isHidden = true
+            return
+        }
+        let origin = viewModel.location.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
+        for (index, item) in searchResults.prefix(5).enumerated() {
+            let btn = UIButton(type: .system)
+            btn.contentHorizontalAlignment = .left
+            btn.titleLabel?.font = .systemFont(ofSize: 14)
+            btn.titleLabel?.lineBreakMode = .byTruncatingTail
+            btn.tag = index
+            var title = item.name ?? "Unknown"
+            if let origin {
+                let itemLocation = CLLocation(latitude: item.placemark.coordinate.latitude,
+                                              longitude: item.placemark.coordinate.longitude)
+                let formatter = MKDistanceFormatter()
+                formatter.unitStyle = .abbreviated
+                title += "  ·  \(formatter.string(fromDistance: itemLocation.distance(from: origin)))"
+            }
+            btn.setTitle(title, for: .normal)
+            btn.addTarget(self, action: #selector(searchResultTapped(_:)), for: .touchUpInside)
+            locationResultsStack.addArrangedSubview(btn)
+        }
+        locationResultsStack.isHidden = false
+    }
+
+    @objc private func searchResultTapped(_ sender: UIButton) {
+        guard searchResults.indices.contains(sender.tag) else { return }
+        let item = searchResults[sender.tag]
+        placePin(at: item.placemark.coordinate)
+        locationSearchField.text = item.name
+        locationResultsStack.isHidden = true
+        view.endEditing(true)
     }
 
     // MARK: – Form helpers
@@ -330,17 +428,13 @@ final class AddEntryViewController: UIViewController {
         checkInPicker.date = viewModel.checkInDate
 
         if let coord = viewModel.location {
-            locationSwitch.isOn = true
             locationMapView.isHidden = false
             placePin(at: coord)
         } else if viewModel.isEditing {
             // Entry was saved without a location — reflect that honestly
-            locationSwitch.isOn = false
             locationMapView.isHidden = true
-            locationStatusLabel.text = "Location not attached"
-        } else if !viewModel.isEditing {
-            locationSwitch.isOn = true
-            locationMapView.isHidden = false
+        } else {
+            // New entry: attach the current location implicitly, no user action needed
             if let coord = prefillCoordinate {
                 // EXIF GPS from Share Extension — use it directly, skip live request
                 placePin(at: coord)
@@ -385,6 +479,7 @@ final class AddEntryViewController: UIViewController {
 
     private func placePin(at coord: CLLocationCoordinate2D) {
         viewModel.location = coord
+        locationMapView.isHidden = false
         locationPin.coordinate = coord
         if locationMapView.annotations.isEmpty {
             locationMapView.addAnnotation(locationPin)
@@ -394,7 +489,10 @@ final class AddEntryViewController: UIViewController {
             MKCoordinateRegion(center: coord, latitudinalMeters: 91, longitudinalMeters: 91),
             animated: true
         )
-        locationStatusLabel.text = String(format: "%.4f, %.4f", coord.latitude, coord.longitude)
+        // Surface the 5 closest places immediately, before the user has typed anything.
+        if (locationSearchField.text ?? "").trimmingCharacters(in: .whitespaces).isEmpty {
+            refreshLocationSuggestions(query: "")
+        }
     }
 
     private func clearForm() {
@@ -406,13 +504,14 @@ final class AddEntryViewController: UIViewController {
         commentPlaceholder.isHidden = false
         visibilityControl.selectedSegmentIndex = viewModel.visibility.segmentIndex
         checkInPicker.date = Date()
-        locationSwitch.isOn = true
+        locationSearchField.text = ""
+        searchResults = []
+        rebuildResultsStack()
         viewModel.selectedImages = []
         viewModel.location = nil
         photoGallery.reloadData()
         locationMapView.removeAnnotations(locationMapView.annotations)
         locationMapView.isHidden = false
-        locationStatusLabel.text = "Requesting location…"
         locationManager.requestLocation()
         updateSaveButtonState()
     }
@@ -492,17 +591,32 @@ final class AddEntryViewController: UIViewController {
         ]))
 
         // Location
-        locationSwitch.isOn = true
-        locationSwitch.onTintColor = Theme.accent
-        locationSwitch.addTarget(self, action: #selector(locationToggled), for: .valueChanged)
+        let locationNote = UILabel()
+        locationNote.text = "Your current location is attached automatically. Search to pin a specific business instead."
+        locationNote.font = .systemFont(ofSize: 12)
+        locationNote.textColor = .secondaryLabel
+        locationNote.numberOfLines = 0
+
+        locationSearchField.backgroundColor = Theme.accentLight
+        locationSearchField.layer.cornerRadius = 10
+        locationSearchField.layer.borderWidth = 1
+        locationSearchField.layer.borderColor = Theme.accentMid.cgColor
+        locationSearchField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 12, height: 0))
+        locationSearchField.leftViewMode = .always
+        locationSearchField.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        locationSearchField.addTarget(self, action: #selector(locationSearchFieldChanged), for: .editingChanged)
+        locationSearchField.addTarget(self, action: #selector(locationSearchFieldDidBeginEditing), for: .editingDidBegin)
         locationMapView.delegate = self
-        locationMapView.heightAnchor.constraint(equalToConstant: 180).isActive = true
-        locationMapView.addGestureRecognizer(
-            UILongPressGestureRecognizer(target: self, action: #selector(mapLongPressed(_:)))
-        )
+        locationMapView.heightAnchor.constraint(equalToConstant: 234).isActive = true // 180 + 30%
+        locationMapView.addSubview(locateMeButton)
+        NSLayoutConstraint.activate([
+            locateMeButton.topAnchor.constraint(equalTo: locationMapView.topAnchor, constant: 8),
+            locateMeButton.trailingAnchor.constraint(equalTo: locationMapView.trailingAnchor, constant: -8)
+        ])
         mainStack.addArrangedSubview(makeCard(title: "Location", views: [
-            makeRow(label: "Attach location", view: locationSwitch),
-            locationStatusLabel,
+            locationNote,
+            locationSearchField,
+            locationResultsStack,
             locationMapView
         ]))
 
@@ -596,6 +710,46 @@ final class AddEntryViewController: UIViewController {
 
     @objc private func dismissKeyboard() { view.endEditing(true) }
 
+    private func registerKeyboardObservers() {
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow(_:)),
+                                               name: UIResponder.keyboardWillShowNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide(_:)),
+                                               name: UIResponder.keyboardWillHideNotification, object: nil)
+    }
+
+    @objc private func keyboardWillShow(_ notification: Notification) {
+        guard let info = notification.userInfo,
+              let endFrame = (info[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue,
+              let duration = info[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double else { return }
+        let keyboardHeight = endFrame.height
+        UIView.animate(withDuration: duration) {
+            self.scrollView.contentInset.bottom = keyboardHeight
+            self.scrollView.verticalScrollIndicatorInsets.bottom = keyboardHeight
+        }
+        if locationSearchField.isFirstResponder {
+            scrollLocationCardIntoView()
+        }
+    }
+
+    @objc private func keyboardWillHide(_ notification: Notification) {
+        guard let info = notification.userInfo,
+              let duration = info[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double else { return }
+        UIView.animate(withDuration: duration) {
+            self.scrollView.contentInset.bottom = 0
+            self.scrollView.verticalScrollIndicatorInsets.bottom = 0
+        }
+    }
+
+    /// Brings the search field, suggestion list, and map preview into view above the keyboard.
+    private func scrollLocationCardIntoView() {
+        let topPoint = locationSearchField.convert(CGPoint.zero, to: scrollView)
+        let bottomPoint = locationMapView.convert(CGPoint(x: 0, y: locationMapView.bounds.height), to: scrollView)
+        let rect = CGRect(x: 0, y: topPoint.y - 8,
+                          width: scrollView.bounds.width,
+                          height: max(bottomPoint.y - topPoint.y + 16, 1))
+        scrollView.scrollRectToVisible(rect, animated: true)
+    }
+
     private func configureLocationManager() {
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyBest
@@ -636,19 +790,21 @@ extension AddEntryViewController: UIImagePickerControllerDelegate, UINavigationC
 extension AddEntryViewController: MKMapViewDelegate {
 
     func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+        // Let the system render built-in points of interest with their own style.
+        guard annotation === locationPin else { return nil }
         let view = MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: nil)
-        view.isDraggable = true
+        view.isDraggable = false
         view.canShowCallout = false
         view.markerTintColor = Theme.accent
         return view
     }
 
-    func mapView(_ mapView: MKMapView, annotationView view: MKAnnotationView,
-                 didChange newState: MKAnnotationView.DragState,
-                 fromOldState oldState: MKAnnotationView.DragState) {
-        guard newState == .ending, let coord = view.annotation?.coordinate else { return }
-        viewModel.location = coord
-        locationStatusLabel.text = String(format: "%.4f, %.4f", coord.latitude, coord.longitude)
+    func mapView(_ mapView: MKMapView, didSelect annotation: MKAnnotation) {
+        guard let feature = annotation as? MKMapFeatureAnnotation else { return }
+        placePin(at: feature.coordinate)
+        locationSearchField.text = feature.title
+        locationResultsStack.isHidden = true
+        mapView.deselectAnnotation(annotation, animated: true)
     }
 }
 
@@ -661,15 +817,14 @@ extension AddEntryViewController: CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        locationStatusLabel.text = "Location unavailable"
-        locationSwitch.isOn = false
-        viewModel.location = nil
+        // Location stays unattached; user can still search for a nearby business manually.
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        guard viewModel.location == nil, !viewModel.isEditing else { return }
         if manager.authorizationStatus == .authorizedWhenInUse ||
            manager.authorizationStatus == .authorizedAlways {
-            if locationSwitch.isOn { manager.requestLocation() }
+            manager.requestLocation()
         }
     }
 }
