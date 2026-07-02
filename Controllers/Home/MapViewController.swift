@@ -10,13 +10,14 @@ final class EntryAnnotation: NSObject, MKAnnotation {
     var coordinate: CLLocationCoordinate2D
     var title: String?
     var subtitle: String?
-    let entry: FoodEntry
+    let placeCheckin: PlaceCheckin
 
-    init(entry: FoodEntry) {
-        self.entry = entry
-        self.coordinate = entry.coordinate ?? CLLocationCoordinate2D()
-        self.title    = entry.placeName.isEmpty ? entry.category.emoji : "\(entry.category.emoji) \(entry.placeName)"
-        self.subtitle = entry.category.rawValue
+    init(placeCheckin pc: PlaceCheckin) {
+        self.placeCheckin = pc
+        self.coordinate = pc.place.coordinate ?? CLLocationCoordinate2D()
+        let cat = pc.place.foodCategory
+        self.title    = pc.place.name.isEmpty ? cat.emoji : "\(cat.emoji) \(pc.place.name)"
+        self.subtitle = pc.place.category
         super.init()
     }
 }
@@ -62,10 +63,7 @@ final class MapViewController: UIViewController {
             mapView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
 
-        // Bind to ViewModel output
-        viewModel.onEntriesUpdated = { [weak self] in
-            self?.refreshPins()
-        }
+        viewModel.onEntriesUpdated = { [weak self] in self?.refreshPins() }
         refreshPins()
     }
 
@@ -73,8 +71,8 @@ final class MapViewController: UIViewController {
 
     private func refreshPins() {
         let annotations = viewModel.entries
-            .filter { $0.coordinate != nil }
-            .map { EntryAnnotation(entry: $0) }
+            .filter { $0.place.coordinate != nil }
+            .map { EntryAnnotation(placeCheckin: $0) }
 
         mapView.removeAnnotations(mapView.annotations)
         mapView.addAnnotations(annotations)
@@ -98,8 +96,8 @@ extension MapViewController: MKMapViewDelegate {
             withIdentifier: MKMapViewDefaultAnnotationViewReuseIdentifier,
             for: annotation
         ) as? MKMarkerAnnotationView
-        view?.glyphText      = ann.entry.category.emoji
-        view?.markerTintColor = categoryColor(ann.entry.category)
+        view?.glyphText       = ann.placeCheckin.place.foodCategory.emoji
+        view?.markerTintColor = Theme.categoryColor(ann.placeCheckin.place.foodCategory)
         view?.canShowCallout  = true
         view?.rightCalloutAccessoryView = UIButton(type: .detailDisclosure)
         return view
@@ -109,12 +107,7 @@ extension MapViewController: MKMapViewDelegate {
                  annotationView view: MKAnnotationView,
                  calloutAccessoryControlTapped control: UIControl) {
         guard let ann = view.annotation as? EntryAnnotation else { return }
-        let entryVM = EntryDetailViewModel(entry: ann.entry)
-        let detail  = EntryDetailViewController(viewModel: entryVM)
+        let detail = EntryDetailViewController(viewModel: EntryDetailViewModel(placeCheckin: ann.placeCheckin))
         navigationController?.pushViewController(detail, animated: true)
-    }
-
-    private func categoryColor(_ cat: FoodCategory) -> UIColor {
-        Theme.categoryColor(cat)
     }
 }

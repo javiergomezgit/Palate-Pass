@@ -188,39 +188,39 @@ final class EntryCell: UITableViewCell {
 
     // MARK: – Configure
 
-    func configure(with entry: FoodEntry) {
-        placeLabel.text = entry.placeName.isEmpty ? "Unknown place" : entry.placeName
+    func configure(with pc: PlaceCheckin) {
+        placeLabel.text = pc.place.name.isEmpty ? "Unknown place" : pc.place.name
 
-        let color = Theme.categoryColor(entry.category)
-        categoryPill.text = " \(entry.category.emoji) "
+        let color = Theme.categoryColor(pc.place.foodCategory)
+        categoryPill.text = " \(pc.place.foodCategory.emoji) "
         categoryPill.backgroundColor = color
 
-        starView.rating = entry.rating
+        starView.rating = pc.checkin.personalRating
 
-        commentLabel.text    = entry.comment.isEmpty ? nil : "\"\(entry.comment)\""
-        commentLabel.isHidden = entry.comment.isEmpty
+        commentLabel.text     = pc.checkin.personalComment.isEmpty ? nil : "\"\(pc.checkin.personalComment)\""
+        commentLabel.isHidden = pc.checkin.personalComment.isEmpty
 
-        applyVisibility(entry.visibility)
+        applyVisibility(pc.checkin.visibility)
 
         let fmt = DateFormatter()
         fmt.dateStyle = .medium
         fmt.timeStyle = .none
-        dateLabel.text = fmt.string(from: entry.checkInDate)
+        dateLabel.text = fmt.string(from: pc.checkin.checkedInAt)
 
-        loadThumbnail(entry: entry, fallbackColor: color)
+        loadThumbnail(pc: pc, fallbackColor: color)
     }
 
     // MARK: – Image loading
 
-    private func loadThumbnail(entry: FoodEntry, fallbackColor: UIColor) {
+    private func loadThumbnail(pc: PlaceCheckin, fallbackColor: UIColor) {
         // 1. Local image (created on this device)
-        if let path = entry.imagePaths.first, let img = DataManager.shared.loadImage(named: path) {
+        if let path = pc.checkin.imagePaths.first, let img = DataManager.shared.loadImage(named: path) {
             applyThumbnail(img)
             return
         }
 
         // 2. Remote URL from Firebase Storage
-        if let urlString = entry.imageURLs.first {
+        if let urlString = pc.checkin.imageURLs.first {
             // Show placeholder while loading
             applyPlaceholder(color: fallbackColor)
 
@@ -255,12 +255,12 @@ final class EntryCell: UITableViewCell {
         thumbImageView.backgroundColor = color.withAlphaComponent(0.1)
     }
 
-    private func applyVisibility(_ visibility: EntryVisibility) {
+    private func applyVisibility(_ visibility: Visibility) {
         switch visibility {
         case .public:
             visibilityLabel.text            = " 🌍 "
             visibilityLabel.backgroundColor = Theme.accentLight
-        case .friends:
+        case .shared:
             visibilityLabel.text            = " 👥 "
             visibilityLabel.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.12)
         case .private:

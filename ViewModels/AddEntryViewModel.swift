@@ -1,22 +1,27 @@
 import UIKit
 import CoreLocation
+import FirebaseAuth
 
 // MARK: – MVVM | ViewModel
-// Owns all form state and business logic for creating or editing a FoodEntry.
+// Owns all form state and business logic for creating or editing a PlaceCheckin.
 // Saves locally first, then uploads to Firestore + Storage via EntryService.
 
 final class AddEntryViewModel {
 
     // MARK: – Form state (View writes these)
 
-    var placeName:     String          = ""
-    var category:      FoodCategory    = .food
-    var rating:        Double          = 0
-    var comment:       String          = ""
-    var visibility:    EntryVisibility = AddEntryViewModel.defaultVisibility
-    var checkInDate:   Date            = Date()
+    var placeName:      String     = ""
+    var category:       FoodCategory = .food
+    var rating:         Double     = 0
+    var comment:        String     = ""
+    var visibility:     Visibility = AddEntryViewModel.defaultVisibility
+    var checkInDate:    Date       = Date()
     var location:       CLLocationCoordinate2D?
-    var selectedImages: [UIImage] = []
+    var selectedImages: [UIImage]  = []
+    /// Set to true only when the user explicitly adds or removes a photo.
+    var imagesModified: Bool = false
+    /// True when the place was selected from a real-business source (MKLocalSearch / map pin).
+    var placeIsClaimed: Bool = false
 
     static let maxPhotos = 5
 
@@ -31,49 +36,49 @@ final class AddEntryViewModel {
 
     // MARK: – Read-only context
 
-    var isEditing: Bool { editingEntry != nil }
+    var isEditing: Bool { editingPlaceCheckin != nil }
 
     var initialImages: [UIImage] {
-        guard let e = editingEntry else { return [] }
-        return e.imagePaths.compactMap { DataManager.shared.loadImage(named: $0) }
+        guard let pc = editingPlaceCheckin else { return [] }
+        return pc.checkin.imagePaths.compactMap { DataManager.shared.loadImage(named: $0) }
     }
 
     /// Remote URLs to download when editing a cloud-fetched entry (no local paths available).
     var initialImageURLs: [String] {
-        guard let e = editingEntry, e.imagePaths.isEmpty else { return [] }
-        return e.imageURLs
+        guard let pc = editingPlaceCheckin, pc.checkin.imagePaths.isEmpty else { return [] }
+        return pc.checkin.imageURLs
     }
 
     // MARK: – Private
 
-    private let editingEntry: FoodEntry?
+    private let editingPlaceCheckin: PlaceCheckin?
 
-    private static var defaultVisibility: EntryVisibility {
+    private static var defaultVisibility: Visibility {
         let obj = UserDefaults.standard.object(forKey: "defaultPublic")
-        guard let obj else { return .public }
+        guard obj != nil else { return .public }
         return UserDefaults.standard.bool(forKey: "defaultPublic") ? .public : .private
     }
 
     // MARK: – Init
 
-    init(editing entry: FoodEntry? = nil) {
-        editingEntry = entry
-        guard let e = entry else { return }
-        placeName   = e.placeName
-        category    = e.category
-        rating      = e.rating
-        comment     = e.comment
-        visibility  = e.visibility
-        checkInDate = e.checkInDate
-        if let lat = e.latitude, let lon = e.longitude {
-            location = CLLocationCoordinate2D(latitude: lat, longitude: lon)
+    init(editing pc: PlaceCheckin? = nil) {
+        editingPlaceCheckin = pc
+        guard let pc else { return }
+        placeName      = pc.place.name
+        category       = pc.place.foodCategory
+        rating         = pc.checkin.personalRating
+        comment        = pc.checkin.personalComment
+        visibility     = pc.checkin.visibility
+        checkInDate    = pc.checkin.checkedInAt
+        placeIsClaimed = pc.place.claimedBusiness
+        if let coord = pc.place.coordinate {
+            location = coord
         }
     }
 
     // MARK: – Save
 
     func save() {
-        // 1. Validate
         guard !placeName.trimmingCharacters(in: .whitespaces).isEmpty else {
             onValidationError?("Place name is required.")
             return
@@ -82,49 +87,79 @@ final class AddEntryViewModel {
             onValidationError?("Please tap at least one star.")
             return
         }
+        guard let uid = Auth.auth().currentUser?.uid else {
+            onValidationError?("Not signed in.")
+            return
+        }
 
-        // 2. Persist images locally so they're available offline
-        let imagesChanged = !selectedImages.isEmpty
+        let imagesChanged = imagesModified
         var localImagePaths: [String]
         if imagesChanged {
             localImagePaths = selectedImages.compactMap { DataManager.shared.saveImage($0) }
         } else {
-            localImagePaths = editingEntry?.imagePaths ?? []
+            localImagePaths = editingPlaceCheckin?.checkin.imagePaths ?? []
         }
 
-        let isNew = editingEntry == nil
-        let entry = FoodEntry(
-            id:          editingEntry?.id ?? UUID(),
-            placeName:   placeName,
-            category:    category,
-            rating:      rating,
-            comment:     comment,
-            visibility:  visibility,
-            latitude:    location?.latitude,
-            longitude:   location?.longitude,
-            checkInDate: checkInDate,
-            imagePaths:  localImagePaths,
-            imageURLs:   imagesChanged ? [] : (editingEntry?.imageURLs ?? [])
+        let isNew   = editingPlaceCheckin == nil
+        let placeID = editingPlaceCheckin?.place.id ?? UUID().uuidString
+
+        let place = Place(
+            id:              placeID,
+            name:            placeName,
+            category:        category.rawValue,
+            latitude:        location?.latitude  ?? 0,
+            longitude:       location?.longitude ?? 0,
+            rating:          rating,
+            checkinCount:    editingPlaceCheckin?.place.checkinCount    ?? 1,
+            publicImageURLs: editingPlaceCheckin?.place.publicImageURLs ?? [],
+            claimedBusiness: placeIsClaimed,
+            phone:           editingPlaceCheckin?.place.phone,
+            website:         editingPlaceCheckin?.place.website,
+            updatedAt:       Date()
         )
 
-        // 3. Save to local store immediately (fast, offline-safe)
+        let checkin = Checkin(
+            id:              placeID,
+            placeRef:        placeID,
+            personalRating:  rating,
+            personalComment: comment,
+            imageURLs:       imagesChanged ? [] : (editingPlaceCheckin?.checkin.imageURLs ?? []),
+            imagePaths:      localImagePaths,
+            checkedInAt:     checkInDate,
+            visibility:      visibility,
+            sharedWith:      editingPlaceCheckin?.checkin.sharedWith ?? []
+        )
+
+        let pc = PlaceCheckin(place: place, checkin: checkin)
+
         if isNew {
-            DataManager.shared.add(entry)
+            DataManager.shared.add(pc)
         } else {
-            DataManager.shared.update(entry)
+            DataManager.shared.update(pc)
         }
 
-        // 4. Signal the View to show a loading state
         onSaving?()
 
-        // 5. Upload to Firebase (image → Storage, doc → Firestore)
-        let oldURLs = imagesChanged ? (editingEntry?.imageURLs ?? []) : []
-        EntryService.shared.save(entry, images: selectedImages, oldImageURLs: oldURLs, isNew: isNew) { [weak self] error in
-            if let error {
-                // Entry is safe locally — inform the View but don't block navigation
-                self?.onSaveError?("Saved locally. Cloud sync failed: \(error.localizedDescription)")
-            } else {
-                self?.onSaveSuccess?()
+        let oldURLs = imagesChanged ? (editingPlaceCheckin?.checkin.imageURLs ?? []) : []
+
+        print("💾 save path: isNew=\(isNew), name=\(placeName), claimed=\(placeIsClaimed)")
+        if isNew {
+            EntryService.shared.create(pc, images: selectedImages, uid: uid) { [weak self] error in
+                if let error {
+                    self?.onSaveError?("Saved locally. Cloud sync failed: \(error.localizedDescription)")
+                } else {
+                    self?.onSaveSuccess?()
+                }
+            }
+        } else {
+            guard let oldCheckin = editingPlaceCheckin?.checkin else { return }
+            EntryService.shared.update(pc, oldCheckin: oldCheckin, images: selectedImages,
+                                       oldImageURLs: oldURLs, uid: uid) { [weak self] error in
+                if let error {
+                    self?.onSaveError?("Saved locally. Cloud sync failed: \(error.localizedDescription)")
+                } else {
+                    self?.onSaveSuccess?()
+                }
             }
         }
     }

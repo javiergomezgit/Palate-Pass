@@ -10,61 +10,63 @@ final class DataManager {
     static let shared = DataManager()
     private init() { load() }
 
-    private let entriesKey  = "foodie_entries"
+    private let checkinsKey = "palate_checkins"
     private let pinnedKey   = "foodie_pinned_ids"
 
-    private(set) var entries: [FoodEntry] = []
+    private(set) var checkins: [PlaceCheckin] = []
 
-    /// Ordered list of pinned entry ID strings (max 3, index 0 = top).
+    /// Ordered list of pinned placeID strings (max 3, index 0 = top).
     private(set) var pinnedIDs: [String] = []
 
     // MARK: – CRUD
 
-    func add(_ entry: FoodEntry) {
-        entries.insert(entry, at: 0)
+    func add(_ pc: PlaceCheckin) {
+        checkins.insert(pc, at: 0)
         save()
         notify()
     }
 
-    func update(_ entry: FoodEntry) {
-        guard let idx = entries.firstIndex(where: { $0.id == entry.id }) else { return }
-        let removedPaths = Set(entries[idx].imagePaths).subtracting(entry.imagePaths)
+    func update(_ pc: PlaceCheckin) {
+        guard let idx = checkins.firstIndex(where: { $0.checkin.id == pc.checkin.id }) else { return }
+        let removedPaths = Set(checkins[idx].checkin.imagePaths).subtracting(pc.checkin.imagePaths)
         removedPaths.forEach { deleteImage(named: $0) }
-        entries[idx] = entry
+        checkins[idx] = pc
         save()
         notify()
     }
 
-    func delete(_ entry: FoodEntry) {
-        entry.imagePaths.forEach { deleteImage(named: $0) }
-        entries.removeAll { $0.id == entry.id }
+    func delete(_ pc: PlaceCheckin) {
+        pc.checkin.imagePaths.forEach { deleteImage(named: $0) }
+        checkins.removeAll { $0.checkin.id == pc.checkin.id }
         save()
         notify()
     }
 
     /// Replaces the entire local cache with data fetched from Firestore.
-    /// Already-sorted entries are written to UserDefaults and listeners are notified.
-    func replaceEntries(_ newEntries: [FoodEntry]) {
-        entries = newEntries
+    func replaceAll(_ new: [PlaceCheckin]) {
+        checkins = new
         save()
         notify()
     }
 
     // MARK: – Pin management
 
-    /// Pins an entry (no-op if already pinned). Does NOT enforce the 3-pin cap — caller must check.
-    func pin(_ entry: FoodEntry) {
-        let id = entry.id.uuidString
+    func pin(_ pc: PlaceCheckin) {
+        let id = pc.checkin.id
         guard !pinnedIDs.contains(id) else { return }
         pinnedIDs.append(id)
         savePins()
         notify()
     }
 
-    func unpin(_ entry: FoodEntry) {
-        pinnedIDs.removeAll { $0 == entry.id.uuidString }
+    func unpin(_ pc: PlaceCheckin) {
+        pinnedIDs.removeAll { $0 == pc.checkin.id }
         savePins()
         notify()
+    }
+
+    func isPinned(_ pc: PlaceCheckin) -> Bool {
+        pinnedIDs.contains(pc.checkin.id)
     }
 
     /// Replaces the entire pin list (used when syncing from Firestore).
@@ -106,8 +108,8 @@ final class DataManager {
     // MARK: – Persistence
 
     private func save() {
-        guard let data = try? JSONEncoder().encode(entries) else { return }
-        UserDefaults.standard.set(data, forKey: entriesKey)
+        guard let data = try? JSONEncoder().encode(checkins) else { return }
+        UserDefaults.standard.set(data, forKey: checkinsKey)
     }
 
     private func savePins() {
@@ -115,9 +117,9 @@ final class DataManager {
     }
 
     private func load() {
-        if let data = UserDefaults.standard.data(forKey: entriesKey),
-           let saved = try? JSONDecoder().decode([FoodEntry].self, from: data) {
-            entries = saved
+        if let data = UserDefaults.standard.data(forKey: checkinsKey),
+           let saved = try? JSONDecoder().decode([PlaceCheckin].self, from: data) {
+            checkins = saved
         }
         pinnedIDs = UserDefaults.standard.stringArray(forKey: pinnedKey) ?? []
     }

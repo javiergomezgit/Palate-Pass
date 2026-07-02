@@ -171,7 +171,7 @@ final class EntryDetailViewController: UIViewController, UIScrollViewDelegate {
 
     @objc private func visibilityBadgeTapped() {
         let sheet = UIAlertController(title: "Visibility", message: nil, preferredStyle: .actionSheet)
-        for option in EntryVisibility.allCases {
+        for option in Visibility.allCases {
             let action = UIAlertAction(title: option.label, style: .default) { [weak self] _ in
                 self?.viewModel.setVisibility(option)
             }
@@ -319,7 +319,7 @@ final class EntryDetailViewController: UIViewController, UIScrollViewDelegate {
         case .public:
             visibilityBadge.backgroundColor = Theme.accentLight
             visibilityBadge.textColor       = Theme.accent
-        case .friends:
+        case .shared:
             visibilityBadge.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.12)
             visibilityBadge.textColor       = .systemGreen
         case .private:

@@ -1,6 +1,6 @@
 // MARK: – MVVM | View
-// Form for creating or editing a FoodEntry.
-// Fields: photo, place, category, rating, check-in date, comment, visibility, location.
+// Form for creating or editing a PlaceCheckin.
+// Fields: photo, place (picker sheet), category, rating, check-in date, comment, visibility.
 
 import UIKit
 import CoreLocation
@@ -54,7 +54,23 @@ final class AddEntryViewController: UIViewController {
         return cv
     }()
 
-    private let placeField = AddEntryViewController.makeField(placeholder: "e.g. Blue Bottle Coffee")
+    /// Tapping opens the PlacePickerViewController sheet. Not directly editable.
+    private let placeField: UITextField = {
+        let f = UITextField()
+        f.placeholder  = "Tap to search…"
+        f.font         = .systemFont(ofSize: 15)
+        f.textAlignment = .left
+        f.clearButtonMode = .never
+        f.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        f.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let icon = UIImageView(image: UIImage(systemName: "magnifyingglass"))
+        icon.tintColor = .tertiaryLabel
+        icon.contentMode = .scaleAspectFit
+        icon.frame = CGRect(x: 0, y: 0, width: 30, height: 20)
+        f.rightView = icon
+        f.rightViewMode = .always
+        return f
+    }()
 
     private let categoryControl: UISegmentedControl = {
         let items = FoodCategory.allCases.map { $0.emoji }
@@ -104,7 +120,6 @@ final class AddEntryViewController: UIViewController {
         return l
     }()
 
-    // Visibility: 0 = Private, 1 = Share (friends), 2 = Public
     private let visibilityControl: UISegmentedControl = {
         let sc = UISegmentedControl(items: ["🔒 Private", "👥 Share", "🌍 Public"])
         sc.selectedSegmentIndex = 2
@@ -118,40 +133,18 @@ final class AddEntryViewController: UIViewController {
         return sc
     }()
 
-    private let locationSearchField = AddEntryViewController.makeField(placeholder: "Search nearby business (optional)")
-
-    private lazy var locationResultsStack: UIStackView = {
-        let sv = UIStackView()
-        sv.axis = .vertical
-        sv.spacing = 4
-        sv.isHidden = true
-        return sv
-    }()
-
+    /// Read-only map preview shown after a place is selected.
     private lazy var locationMapView: MKMapView = {
         let mv = MKMapView()
         mv.layer.cornerRadius = 12
         mv.clipsToBounds = true
         mv.isHidden = true
-        mv.showsUserLocation = true
-        mv.selectableMapFeatures = .pointsOfInterest
+        mv.isUserInteractionEnabled = false
         mv.translatesAutoresizingMaskIntoConstraints = false
         return mv
     }()
 
-    private lazy var locateMeButton: MKUserTrackingButton = {
-        let btn = MKUserTrackingButton(mapView: locationMapView)
-        btn.layer.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.9).cgColor
-        btn.layer.cornerRadius = 6
-        btn.translatesAutoresizingMaskIntoConstraints = false
-        return btn
-    }()
-
     private let locationPin = MKPointAnnotation()
-
-    private var searchDebounceTimer: Timer?
-    private var currentLocalSearch: MKLocalSearch?
-    private var searchResults: [MKMapItem] = []
 
     // MARK: – Lifecycle
 
@@ -184,8 +177,6 @@ final class AddEntryViewController: UIViewController {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        // Stack view doesn't reliably unhide arranged subviews set during viewDidLoad.
-        // Re-apply visibility and region once the view is fully on screen.
         guard let coord = viewModel.location else { return }
         locationMapView.isHidden = false
         placePin(at: coord)
@@ -212,10 +203,8 @@ final class AddEntryViewController: UIViewController {
         viewModel.onSaveError = { [weak self] message in
             guard let self else { return }
             self.setSaveLoading(false)
-            // Entry is already saved locally — ask user what to do
             let alert = UIAlertController(title: "Sync Failed", message: message, preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "Keep Locally", style: .default) { [weak self] _ in
-                // Navigate away — data is not lost
                 guard let self else { return }
                 if self.viewModel.isEditing {
                     self.navigationController?.popViewController(animated: true)
@@ -252,7 +241,7 @@ final class AddEntryViewController: UIViewController {
             saveBtn.tintColor = Theme.accent
             navigationItem.rightBarButtonItem = saveBtn
         }
-        navigationItem.leftBarButtonItem?.isEnabled  = !loading
+        navigationItem.leftBarButtonItem?.isEnabled = !loading
         view.isUserInteractionEnabled = !loading
     }
 
@@ -271,8 +260,9 @@ final class AddEntryViewController: UIViewController {
         viewModel.category    = FoodCategory.allCases[categoryControl.selectedSegmentIndex]
         viewModel.rating      = starView.rating
         viewModel.comment     = commentView.text ?? ""
-        viewModel.visibility  = EntryVisibility.from(segmentIndex: visibilityControl.selectedSegmentIndex)
+        viewModel.visibility  = Visibility.from(segmentIndex: visibilityControl.selectedSegmentIndex)
         viewModel.checkInDate = checkInPicker.date
+        print("📝 saveTapped: placeName=\(viewModel.placeName), placeIsClaimed=\(viewModel.placeIsClaimed)")
         viewModel.save()
     }
 
@@ -312,107 +302,61 @@ final class AddEntryViewController: UIViewController {
 
     private func removePhoto(at index: Int) {
         viewModel.selectedImages.remove(at: index)
+        viewModel.imagesModified = true
         photoGallery.reloadData()
     }
 
-    @objc private func locationSearchFieldChanged() {
-        searchDebounceTimer?.invalidate()
-        let query = locationSearchField.text ?? ""
-        searchDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: false) { [weak self] _ in
-            self?.refreshLocationSuggestions(query: query)
-        }
-    }
+    // MARK: – Place picker
 
-    @objc private func locationSearchFieldDidBeginEditing() {
-        // Show the 5 closest places immediately, before the user types anything.
-        if searchResults.isEmpty {
-            refreshLocationSuggestions(query: locationSearchField.text ?? "")
-        }
-        scrollLocationCardIntoView()
-    }
-
-    /// Empty query → nearby points of interest ranked by distance. Non-empty → named search, still ranked by distance.
-    private func refreshLocationSuggestions(query: String) {
-        currentLocalSearch?.cancel()
-        guard let coord = viewModel.location else {
-            searchResults = []
-            rebuildResultsStack()
-            return
-        }
-
-        let trimmed = query.trimmingCharacters(in: .whitespaces)
-        let search: MKLocalSearch
-        if trimmed.isEmpty {
-            let request = MKLocalPointsOfInterestRequest(center: coord, radius: 1000)
-            request.pointOfInterestFilter = MKPointOfInterestFilter(including: [
-                .restaurant, .cafe, .bakery, .foodMarket, .brewery, .winery, .nightlife
-            ])
-            search = MKLocalSearch(request: request)
-        } else {
-            let request = MKLocalSearch.Request()
-            request.naturalLanguageQuery = trimmed
-            request.resultTypes = .pointOfInterest
-            request.region = MKCoordinateRegion(center: coord, latitudinalMeters: 5000, longitudinalMeters: 5000)
-            search = MKLocalSearch(request: request)
-        }
-
-        currentLocalSearch = search
-        search.start { [weak self] response, error in
-            guard let self else { return }
-            guard let items = response?.mapItems, error == nil else {
-                self.searchResults = []
-                self.rebuildResultsStack()
-                return
+    private func presentPlacePicker() {
+        let picker = PlacePickerViewController()
+        picker.initialCoordinate = viewModel.location
+        picker.onSelect = { [weak self] name, coordinate, isClaimed in
+            guard let self else { print("❌ onSelect: self is nil"); return }
+            print("✅ onSelect fired: name=\(name), isClaimed=\(isClaimed)")
+            self.placeField.text = name
+            self.viewModel.placeIsClaimed = isClaimed
+            if let coordinate {
+                self.placePin(at: coordinate)
             }
-            self.searchResults = self.sortedByDistance(items, from: coord)
-            self.rebuildResultsStack()
+            self.updatePlaceFieldState()
+            self.updateSaveButtonState()
         }
+        if let sheet = picker.sheetPresentationController {
+            sheet.detents = [.medium(), .large()]
+            sheet.prefersGrabberVisible = true
+            sheet.preferredCornerRadius = 20
+        }
+        present(picker, animated: true)
     }
 
-    private func sortedByDistance(_ items: [MKMapItem], from coord: CLLocationCoordinate2D) -> [MKMapItem] {
-        let origin = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
-        return items.sorted {
-            let d0 = CLLocation(latitude: $0.placemark.coordinate.latitude, longitude: $0.placemark.coordinate.longitude).distance(from: origin)
-            let d1 = CLLocation(latitude: $1.placemark.coordinate.latitude, longitude: $1.placemark.coordinate.longitude).distance(from: origin)
-            return d0 < d1
-        }
+    // MARK: – Place field state
+
+    /// Updates the place field's right-side icon and interactivity to reflect claimed status.
+    private func updatePlaceFieldState() {
+        let locked = viewModel.placeIsClaimed
+        let iconName = locked ? "lock.fill" : "magnifyingglass"
+        let icon = UIImageView(image: UIImage(systemName: iconName))
+        icon.tintColor = .tertiaryLabel
+        icon.contentMode = .scaleAspectFit
+        icon.frame = CGRect(x: 0, y: 0, width: 30, height: 20)
+        placeField.rightView = icon
+        placeField.alpha = locked ? 0.6 : 1.0
     }
 
-    private func rebuildResultsStack() {
-        locationResultsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        guard !searchResults.isEmpty else {
-            locationResultsStack.isHidden = true
-            return
-        }
-        let origin = viewModel.location.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
-        for (index, item) in searchResults.prefix(5).enumerated() {
-            let btn = UIButton(type: .system)
-            btn.contentHorizontalAlignment = .left
-            btn.titleLabel?.font = .systemFont(ofSize: 14)
-            btn.titleLabel?.lineBreakMode = .byTruncatingTail
-            btn.tag = index
-            var title = item.name ?? "Unknown"
-            if let origin {
-                let itemLocation = CLLocation(latitude: item.placemark.coordinate.latitude,
-                                              longitude: item.placemark.coordinate.longitude)
-                let formatter = MKDistanceFormatter()
-                formatter.unitStyle = .abbreviated
-                title += "  ·  \(formatter.string(fromDistance: itemLocation.distance(from: origin)))"
-            }
-            btn.setTitle(title, for: .normal)
-            btn.addTarget(self, action: #selector(searchResultTapped(_:)), for: .touchUpInside)
-            locationResultsStack.addArrangedSubview(btn)
-        }
-        locationResultsStack.isHidden = false
-    }
+    // MARK: – Map preview
 
-    @objc private func searchResultTapped(_ sender: UIButton) {
-        guard searchResults.indices.contains(sender.tag) else { return }
-        let item = searchResults[sender.tag]
-        placePin(at: item.placemark.coordinate)
-        locationSearchField.text = item.name
-        locationResultsStack.isHidden = true
-        view.endEditing(true)
+    private func placePin(at coord: CLLocationCoordinate2D) {
+        viewModel.location = coord
+        locationMapView.isHidden = false
+        locationPin.coordinate = coord
+        if locationMapView.annotations.isEmpty {
+            locationMapView.addAnnotation(locationPin)
+        }
+        locationMapView.setRegion(
+            MKCoordinateRegion(center: coord, latitudinalMeters: 91, longitudinalMeters: 91),
+            animated: true
+        )
     }
 
     // MARK: – Form helpers
@@ -430,13 +374,8 @@ final class AddEntryViewController: UIViewController {
         if let coord = viewModel.location {
             locationMapView.isHidden = false
             placePin(at: coord)
-        } else if viewModel.isEditing {
-            // Entry was saved without a location — reflect that honestly
-            locationMapView.isHidden = true
-        } else {
-            // New entry: attach the current location implicitly, no user action needed
+        } else if !viewModel.isEditing {
             if let coord = prefillCoordinate {
-                // EXIF GPS from Share Extension — use it directly, skip live request
                 placePin(at: coord)
             } else {
                 locationManager.requestWhenInUseAuthorization()
@@ -454,7 +393,6 @@ final class AddEntryViewController: UIViewController {
                 viewModel.selectedImages = local
                 photoGallery.reloadData()
             } else {
-                // Cloud-fetched entry: download remote images
                 let urls = viewModel.initialImageURLs
                 guard !urls.isEmpty else { photoGallery.reloadData(); return }
                 let group = DispatchGroup()
@@ -474,25 +412,8 @@ final class AddEntryViewController: UIViewController {
             }
         }
 
+        updatePlaceFieldState()
         updateSaveButtonState()
-    }
-
-    private func placePin(at coord: CLLocationCoordinate2D) {
-        viewModel.location = coord
-        locationMapView.isHidden = false
-        locationPin.coordinate = coord
-        if locationMapView.annotations.isEmpty {
-            locationMapView.addAnnotation(locationPin)
-        }
-        // 300 feet ≈ 91 metres
-        locationMapView.setRegion(
-            MKCoordinateRegion(center: coord, latitudinalMeters: 91, longitudinalMeters: 91),
-            animated: true
-        )
-        // Surface the 5 closest places immediately, before the user has typed anything.
-        if (locationSearchField.text ?? "").trimmingCharacters(in: .whitespaces).isEmpty {
-            refreshLocationSuggestions(query: "")
-        }
     }
 
     private func clearForm() {
@@ -504,14 +425,12 @@ final class AddEntryViewController: UIViewController {
         commentPlaceholder.isHidden = false
         visibilityControl.selectedSegmentIndex = viewModel.visibility.segmentIndex
         checkInPicker.date = Date()
-        locationSearchField.text = ""
-        searchResults = []
-        rebuildResultsStack()
         viewModel.selectedImages = []
+        viewModel.imagesModified = false
         viewModel.location = nil
         photoGallery.reloadData()
         locationMapView.removeAnnotations(locationMapView.annotations)
-        locationMapView.isHidden = false
+        locationMapView.isHidden = true
         locationManager.requestLocation()
         updateSaveButtonState()
     }
@@ -545,8 +464,8 @@ final class AddEntryViewController: UIViewController {
         mainStack.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(mainStack)
 
-        // Place
-        placeField.addTarget(self, action: #selector(textFieldChanged), for: .editingChanged)
+        // Place — tapping opens PlacePickerViewController
+        placeField.delegate = self
         mainStack.addArrangedSubview(makeCard(title: "Place", views: [
             makeRow(label: "Where", view: placeField)
         ]))
@@ -590,35 +509,9 @@ final class AddEntryViewController: UIViewController {
             visibilityNote
         ]))
 
-        // Location
-        let locationNote = UILabel()
-        locationNote.text = "Your current location is attached automatically. Search to pin a specific business instead."
-        locationNote.font = .systemFont(ofSize: 12)
-        locationNote.textColor = .secondaryLabel
-        locationNote.numberOfLines = 0
-
-        locationSearchField.backgroundColor = Theme.accentLight
-        locationSearchField.layer.cornerRadius = 10
-        locationSearchField.layer.borderWidth = 1
-        locationSearchField.layer.borderColor = Theme.accentMid.cgColor
-        locationSearchField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 12, height: 0))
-        locationSearchField.leftViewMode = .always
-        locationSearchField.heightAnchor.constraint(equalToConstant: 44).isActive = true
-        locationSearchField.addTarget(self, action: #selector(locationSearchFieldChanged), for: .editingChanged)
-        locationSearchField.addTarget(self, action: #selector(locationSearchFieldDidBeginEditing), for: .editingDidBegin)
-        locationMapView.delegate = self
-        locationMapView.heightAnchor.constraint(equalToConstant: 234).isActive = true // 180 + 30%
-        locationMapView.addSubview(locateMeButton)
-        NSLayoutConstraint.activate([
-            locateMeButton.topAnchor.constraint(equalTo: locationMapView.topAnchor, constant: 8),
-            locateMeButton.trailingAnchor.constraint(equalTo: locationMapView.trailingAnchor, constant: -8)
-        ])
-        mainStack.addArrangedSubview(makeCard(title: "Location", views: [
-            locationNote,
-            locationSearchField,
-            locationResultsStack,
-            locationMapView
-        ]))
+        // Location preview map (read-only — shown after a place is selected)
+        locationMapView.heightAnchor.constraint(equalToConstant: 180).isActive = true
+        mainStack.addArrangedSubview(makeCard(title: "Location", views: [locationMapView]))
 
         NSLayoutConstraint.activate([
             photoGallery.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 16),
@@ -632,21 +525,9 @@ final class AddEntryViewController: UIViewController {
         ])
     }
 
-    @objc private func textFieldChanged() { updateSaveButtonState() }
     @objc private func categoryChanged()  { /* synced to VM on save */ }
 
     // MARK: – Helpers
-
-    private static func makeField(placeholder: String) -> UITextField {
-        let f = UITextField()
-        f.placeholder = placeholder
-        f.font = .systemFont(ofSize: 15)
-        f.textAlignment = .left
-        f.clearButtonMode = .whileEditing
-        f.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        f.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return f
-    }
 
     private func makeCard(title: String, views: [UIView]) -> UIView {
         let header = UILabel()
@@ -688,13 +569,6 @@ final class AddEntryViewController: UIViewController {
         return row
     }
 
-    private func makeDivider() -> UIView {
-        let v = UIView()
-        v.backgroundColor = .separator
-        v.heightAnchor.constraint(equalToConstant: 0.5).isActive = true
-        return v
-    }
-
     private func shake(_ view: UIView) {
         let anim = CAKeyframeAnimation(keyPath: "transform.translation.x")
         anim.values = [-8, 8, -6, 6, -4, 4, 0]
@@ -721,13 +595,9 @@ final class AddEntryViewController: UIViewController {
         guard let info = notification.userInfo,
               let endFrame = (info[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue,
               let duration = info[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double else { return }
-        let keyboardHeight = endFrame.height
         UIView.animate(withDuration: duration) {
-            self.scrollView.contentInset.bottom = keyboardHeight
-            self.scrollView.verticalScrollIndicatorInsets.bottom = keyboardHeight
-        }
-        if locationSearchField.isFirstResponder {
-            scrollLocationCardIntoView()
+            self.scrollView.contentInset.bottom = endFrame.height
+            self.scrollView.verticalScrollIndicatorInsets.bottom = endFrame.height
         }
     }
 
@@ -740,19 +610,23 @@ final class AddEntryViewController: UIViewController {
         }
     }
 
-    /// Brings the search field, suggestion list, and map preview into view above the keyboard.
-    private func scrollLocationCardIntoView() {
-        let topPoint = locationSearchField.convert(CGPoint.zero, to: scrollView)
-        let bottomPoint = locationMapView.convert(CGPoint(x: 0, y: locationMapView.bounds.height), to: scrollView)
-        let rect = CGRect(x: 0, y: topPoint.y - 8,
-                          width: scrollView.bounds.width,
-                          height: max(bottomPoint.y - topPoint.y + 16, 1))
-        scrollView.scrollRectToVisible(rect, animated: true)
-    }
-
     private func configureLocationManager() {
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyBest
+    }
+}
+
+// MARK: – UITextFieldDelegate (intercept place field tap)
+
+extension AddEntryViewController: UITextFieldDelegate {
+    func textFieldShouldBeginEditing(_ textField: UITextField) -> Bool {
+        if textField === placeField {
+            if !viewModel.placeIsClaimed {
+                presentPlacePicker()
+            }
+            return false
+        }
+        return true
     }
 }
 
@@ -781,30 +655,8 @@ extension AddEntryViewController: UIImagePickerControllerDelegate, UINavigationC
         picker.dismiss(animated: true)
         guard let img = info[.editedImage] as? UIImage ?? info[.originalImage] as? UIImage else { return }
         viewModel.selectedImages.append(img)
+        viewModel.imagesModified = true
         photoGallery.reloadData()
-    }
-}
-
-// MARK: – MKMapViewDelegate
-
-extension AddEntryViewController: MKMapViewDelegate {
-
-    func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
-        // Let the system render built-in points of interest with their own style.
-        guard annotation === locationPin else { return nil }
-        let view = MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: nil)
-        view.isDraggable = false
-        view.canShowCallout = false
-        view.markerTintColor = Theme.accent
-        return view
-    }
-
-    func mapView(_ mapView: MKMapView, didSelect annotation: MKAnnotation) {
-        guard let feature = annotation as? MKMapFeatureAnnotation else { return }
-        placePin(at: feature.coordinate)
-        locationSearchField.text = feature.title
-        locationResultsStack.isHidden = true
-        mapView.deselectAnnotation(annotation, animated: true)
     }
 }
 
@@ -812,13 +664,11 @@ extension AddEntryViewController: MKMapViewDelegate {
 
 extension AddEntryViewController: CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let loc = locations.last else { return }
+        guard let loc = locations.last, viewModel.location == nil else { return }
         placePin(at: loc.coordinate)
     }
 
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        // Location stays unattached; user can still search for a nearby business manually.
-    }
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         guard viewModel.location == nil, !viewModel.isEditing else { return }
@@ -835,16 +685,15 @@ extension AddEntryViewController: UICollectionViewDataSource, UICollectionViewDe
 
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
         let photos = viewModel.selectedImages.count
-        return photos < AddEntryViewModel.maxPhotos ? photos + 1 : photos  // +1 for the Add cell
+        return photos < AddEntryViewModel.maxPhotos ? photos + 1 : photos
     }
 
     func collectionView(_ collectionView: UICollectionView,
                         cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
         let isAddCell = indexPath.item == viewModel.selectedImages.count
         if isAddCell {
-            let cell = collectionView.dequeueReusableCell(
+            return collectionView.dequeueReusableCell(
                 withReuseIdentifier: PhotoGalleryAddCell.reuseID, for: indexPath) as! PhotoGalleryAddCell
-            return cell
         }
         let cell = collectionView.dequeueReusableCell(
             withReuseIdentifier: PhotoGalleryImageCell.reuseID, for: indexPath) as! PhotoGalleryImageCell
@@ -931,9 +780,7 @@ final class PhotoGalleryImageCell: UICollectionViewCell {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    func configure(with image: UIImage) {
-        imageView.image = image
-    }
+    func configure(with image: UIImage) { imageView.image = image }
 
     override func prepareForReuse() {
         super.prepareForReuse()

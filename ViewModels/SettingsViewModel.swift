@@ -67,12 +67,12 @@ final class SettingsViewModel {
 
     // MARK: – Entry stats
 
-    var entryCount: Int { DataManager.shared.entries.count }
+    var entryCount: Int { DataManager.shared.checkins.count }
 
     var averageRatingText: String {
-        let entries = DataManager.shared.entries
-        guard !entries.isEmpty else { return "–" }
-        let avg = entries.map(\.rating).reduce(0, +) / Double(entries.count)
+        let checkins = DataManager.shared.checkins
+        guard !checkins.isEmpty else { return "–" }
+        let avg = checkins.map(\.checkin.personalRating).reduce(0, +) / Double(checkins.count)
         return String(format: "%.1f", avg)
     }
 
@@ -106,7 +106,7 @@ final class SettingsViewModel {
 
     func exportData() {
         guard
-            let data = try? JSONEncoder().encode(DataManager.shared.entries),
+            let data = try? JSONEncoder().encode(DataManager.shared.checkins),
             let json = String(data: data, encoding: .utf8)
         else { return }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("palatepass_export.json")
@@ -115,7 +115,7 @@ final class SettingsViewModel {
     }
 
     func deleteAllEntries() {
-        DataManager.shared.entries.forEach { DataManager.shared.delete($0) }
+        DataManager.shared.checkins.forEach { DataManager.shared.delete($0) }
     }
 
     // MARK: – Firestore profile

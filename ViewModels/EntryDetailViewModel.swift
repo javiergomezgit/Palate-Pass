@@ -1,8 +1,9 @@
 import UIKit
+import CoreLocation
+import FirebaseAuth
 
 // MARK: – MVVM | ViewModel
-// Wraps a single FoodEntry and exposes formatted display values and mutating actions.
-// The View never reads raw model fields — it asks the ViewModel for everything.
+// Wraps a single PlaceCheckin and exposes formatted display values and mutating actions.
 
 final class EntryDetailViewModel {
 
@@ -12,78 +13,86 @@ final class EntryDetailViewModel {
 
     // MARK: – Formatted display values
 
-    var placeName:      String  { entry.placeName.isEmpty ? "Unknown place" : entry.placeName }
-    var categoryBadge:  String  { "\(entry.category.emoji) \(entry.category.rawValue)" }
-    var rating:         Double  { entry.rating }
-    var formattedRating: String { String(format: "%.1f / 5.0", entry.rating) }
-    var comment:        String  { entry.comment }
-    var hasComment:     Bool    { !entry.comment.isEmpty }
-    var visibility:     EntryVisibility { entry.visibility }
-    var visibilityText: String  { entry.visibility.label }
-    var category:       FoodCategory   { entry.category }
+    var placeName:       String     { placeCheckin.place.name.isEmpty ? "Unknown place" : placeCheckin.place.name }
+    var categoryBadge:   String     { "\(placeCheckin.place.foodCategory.emoji) \(placeCheckin.place.category)" }
+    var rating:          Double     { placeCheckin.checkin.personalRating }
+    var formattedRating: String     { String(format: "%.1f / 5.0", placeCheckin.checkin.personalRating) }
+    var comment:         String     { placeCheckin.checkin.personalComment }
+    var hasComment:      Bool       { !placeCheckin.checkin.personalComment.isEmpty }
+    var visibility:      Visibility { placeCheckin.checkin.visibility }
+    var visibilityText:  String     { placeCheckin.checkin.visibility.label }
+    var category:        FoodCategory { placeCheckin.place.foodCategory }
 
     var coordinate: (latitude: Double, longitude: Double)? {
-        guard let lat = entry.latitude, let lon = entry.longitude else { return nil }
-        return (lat, lon)
+        guard let c = placeCheckin.place.coordinate else { return nil }
+        return (c.latitude, c.longitude)
     }
 
-    /// Local images loaded synchronously (empty for cloud-fetched entries).
     var localPhotos: [UIImage] {
-        entry.imagePaths.compactMap { DataManager.shared.loadImage(named: $0) }
+        placeCheckin.checkin.imagePaths.compactMap { DataManager.shared.loadImage(named: $0) }
     }
 
-    /// Remote Storage URLs for entries fetched from Firestore.
-    var remoteImageURLs: [String] { entry.imageURLs }
+    var remoteImageURLs: [String] { placeCheckin.checkin.imageURLs }
 
-    /// True when the entry has any image — either local or remote.
-    var hasImage: Bool { !entry.imagePaths.isEmpty || !entry.imageURLs.isEmpty }
+    var hasImage: Bool {
+        !placeCheckin.checkin.imagePaths.isEmpty || !placeCheckin.checkin.imageURLs.isEmpty
+    }
 
-    var totalImageCount: Int { max(entry.imagePaths.count, entry.imageURLs.count) }
+    var totalImageCount: Int {
+        max(placeCheckin.checkin.imagePaths.count, placeCheckin.checkin.imageURLs.count)
+    }
 
     var formattedDate: String {
         let fmt = DateFormatter()
         fmt.dateStyle = .long
         fmt.timeStyle = .short
-        return fmt.string(from: entry.checkInDate)
+        return fmt.string(from: placeCheckin.checkin.checkedInAt)
     }
 
-    var editViewModel: AddEntryViewModel { AddEntryViewModel(editing: entry) }
+    var editViewModel: AddEntryViewModel { AddEntryViewModel(editing: placeCheckin) }
 
     // MARK: – Private
 
-    private(set) var entry: FoodEntry
+    private(set) var placeCheckin: PlaceCheckin
 
     // MARK: – Init
 
-    init(entry: FoodEntry) {
-        self.entry = entry
+    init(placeCheckin: PlaceCheckin) {
+        self.placeCheckin = placeCheckin
     }
 
     // MARK: – Input
 
-    /// Cycles visibility: public → friends → private → public
+    /// Cycles visibility: public → shared → private → public
     func cycleVisibility() {
-        var updated = entry
-        switch entry.visibility {
-        case .public:  updated.visibility = .friends
-        case .friends: updated.visibility = .private
-        case .private: updated.visibility = .public
+        let next: Visibility
+        switch placeCheckin.checkin.visibility {
+        case .public:  next = .shared
+        case .shared:  next = .private
+        case .private: next = .public
         }
-        DataManager.shared.update(updated)
-        entry = updated
-        onEntryUpdated?()
+        applyVisibility(next)
     }
 
-    func setVisibility(_ visibility: EntryVisibility) {
-        var updated = entry
-        updated.visibility = visibility
-        DataManager.shared.update(updated)
-        entry = updated
-        onEntryUpdated?()
+    func setVisibility(_ visibility: Visibility) {
+        applyVisibility(visibility)
     }
 
     func delete() {
-        DataManager.shared.delete(entry)                                    // local — instant
-        EntryService.shared.delete(entry: entry)           // cloud — async
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        DataManager.shared.delete(placeCheckin)
+        EntryService.shared.delete(pc: placeCheckin, uid: uid)
+    }
+
+    // MARK: – Private
+
+    private func applyVisibility(_ newVisibility: Visibility) {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        var updated = placeCheckin
+        updated.checkin.visibility = newVisibility
+        DataManager.shared.update(updated)
+        placeCheckin = updated
+        onEntryUpdated?()
+        EntryService.shared.changeVisibility(placeCheckin, to: newVisibility, uid: uid)
     }
 }

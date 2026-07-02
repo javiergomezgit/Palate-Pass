@@ -42,6 +42,7 @@
 		22AECB162FECA12300C0D9B5 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 22AECAF72FECA12300C0D9B5 /* LaunchScreen.storyboard */; };
 		22AECB172FECA12300C0D9B5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 22AECAE52FECA12300C0D9B5 /* Assets.xcassets */; };
 		22AECB5C2FECA32900C0D9B5 /* AddEntryViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22AECB5B2FECA32400C0D9B5 /* AddEntryViewController.swift */; };
+		22B8E8A72FF7223500383B30 /* PlacePickerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22B8E8A62FF7223500383B30 /* PlacePickerViewController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -93,6 +94,7 @@
 		22AECAF82FECA12300C0D9B5 /* StarRatingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StarRatingView.swift; sourceTree = "<group>"; };
 		22AECAF92FECA12300C0D9B5 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		22AECB5B2FECA32400C0D9B5 /* AddEntryViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddEntryViewController.swift; sourceTree = "<group>"; };
+		22B8E8A62FF7223500383B30 /* PlacePickerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacePickerViewController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -175,6 +177,7 @@
 		22AECAD42FECA12300C0D9B5 /* Add */ = {
 			isa = PBXGroup;
 			children = (
+				22B8E8A62FF7223500383B30 /* PlacePickerViewController.swift */,
 				22AECB5B2FECA32400C0D9B5 /* AddEntryViewController.swift */,
 			);
 			path = Add;
@@ -409,6 +412,7 @@
 				22AECAFC2FECA12300C0D9B5 /* EntryDetailViewController.swift in Sources */,
 				22AECAFD2FECA12300C0D9B5 /* EntryCell.swift in Sources */,
 				22AECAFE2FECA12300C0D9B5 /* HomeViewModel.swift in Sources */,
+				22B8E8A72FF7223500383B30 /* PlacePickerViewController.swift in Sources */,
 				22AECAFF2FECA12300C0D9B5 /* UserProfile.swift in Sources */,
 				22AECB002FECA12300C0D9B5 /* AppDelegate.swift in Sources */,
 				22AECB012FECA12300C0D9B5 /* ImageLoader.swift in Sources */,

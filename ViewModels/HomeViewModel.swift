@@ -2,9 +2,8 @@ import Foundation
 import FirebaseAuth
 
 // MARK: – MVVM | ViewModel
-// Owns the filtered entry list for the Home tab (shared by ListViewController and MapViewController).
+// Owns the filtered checkin list for the Home tab (shared by ListViewController and MapViewController).
 // On init: shows local cache immediately, then fetches from Firestore in the background.
-// Manual refresh is available via fetchFromFirestore().
 
 final class HomeViewModel {
 
@@ -12,21 +11,18 @@ final class HomeViewModel {
 
     // MARK: – Output callbacks
 
-    /// Called on the main thread whenever the filtered entries change (local or cloud).
     var onEntriesUpdated: (() -> Void)?
-    /// Called when a Firestore fetch fails. Local cache remains visible.
-    var onFetchError: ((String) -> Void)?
-    /// Called when the user tries to pin a 4th entry.
+    var onFetchError:     ((String) -> Void)?
     var onPinLimitReached: (() -> Void)?
 
-    /// Pinned entries in pin order (max 3). Respects active filter/search.
-    private(set) var pinnedEntries: [FoodEntry] = []
-    /// All non-pinned entries, sorted newest first. Respects active filter/search.
-    private(set) var entries: [FoodEntry] = []
+    /// Pinned checkins in pin order (max 3). Respects active filter/search.
+    private(set) var pinnedEntries: [PlaceCheckin] = []
+    /// All non-pinned checkins, sorted newest first. Respects active filter/search.
+    private(set) var entries: [PlaceCheckin] = []
 
     private(set) var activeFilter: FoodCategory?
-    private(set) var searchQuery: String = ""
-    private(set) var isFetching = false
+    private(set) var searchQuery:  String = ""
+    private(set) var isFetching    = false
 
     // MARK: – Init
 
@@ -52,51 +48,42 @@ final class HomeViewModel {
         reload()
     }
 
-    /// Removes the entry from the local cache immediately, then deletes it from
-    /// Firestore in the background. The UI updates right away via NotificationCenter.
-    func delete(_ entry: FoodEntry) {
-        DataManager.shared.unpin(entry)
-        DataManager.shared.delete(entry)
-        EntryService.shared.delete(entry: entry)
+    func delete(_ pc: PlaceCheckin) {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        DataManager.shared.unpin(pc)
+        DataManager.shared.delete(pc)
+        EntryService.shared.delete(pc: pc, uid: uid)
         syncPinsToFirestore()
     }
 
-    /// Pins or unpins an entry. Enforces the 3-pin cap via onPinLimitReached.
-    func togglePin(_ entry: FoodEntry) {
-        let id = entry.id.uuidString
+    func togglePin(_ pc: PlaceCheckin) {
+        let id = pc.checkin.id
         if DataManager.shared.pinnedIDs.contains(id) {
-            DataManager.shared.unpin(entry)
+            DataManager.shared.unpin(pc)
         } else {
             guard DataManager.shared.pinnedIDs.count < HomeViewModel.maxPins else {
                 onPinLimitReached?()
                 return
             }
-            DataManager.shared.pin(entry)
+            DataManager.shared.pin(pc)
         }
         syncPinsToFirestore()
     }
 
-    func isPinned(_ entry: FoodEntry) -> Bool {
-        DataManager.shared.pinnedIDs.contains(entry.id.uuidString)
+    func isPinned(_ pc: PlaceCheckin) -> Bool {
+        DataManager.shared.isPinned(pc)
     }
 
-    /// Downloads the current user's entries from Firestore and refreshes the list.
-    /// Safe to call multiple times (guards against concurrent fetches).
     func fetchFromFirestore() {
         guard !isFetching else { return }
         guard let uid = Auth.auth().currentUser?.uid else { return }
-
         isFetching = true
-
-        EntryService.shared.fetchEntries(for: uid) { [weak self] result in
+        EntryService.shared.fetchCheckins(for: uid) { [weak self] result in
             guard let self else { return }
             self.isFetching = false
-
             switch result {
             case .success(let fetched):
-                DataManager.shared.replaceEntries(fetched)
-                // reload() fires automatically via NotificationCenter → entriesDidChange
-
+                DataManager.shared.replaceAll(fetched)
             case .failure(let error):
                 self.onFetchError?(error.localizedDescription)
             }
@@ -118,28 +105,27 @@ final class HomeViewModel {
     }
 
     @objc private func reload() {
-        var result = DataManager.shared.entries
+        var result = DataManager.shared.checkins
 
         if let cat = activeFilter {
-            result = result.filter { $0.category == cat }
+            result = result.filter { FoodCategory(rawValue: $0.place.category) == cat }
         }
 
         let q = searchQuery.trimmingCharacters(in: .whitespaces)
         if !q.isEmpty {
-            result = result.filter { entry in
-                entry.placeName.localizedCaseInsensitiveContains(q)
-                || entry.comment.localizedCaseInsensitiveContains(q)
-                || entry.category.rawValue.localizedCaseInsensitiveContains(q)
+            result = result.filter { pc in
+                pc.place.name.localizedCaseInsensitiveContains(q)
+                || pc.checkin.personalComment.localizedCaseInsensitiveContains(q)
+                || pc.place.category.localizedCaseInsensitiveContains(q)
             }
         }
 
         let pinnedIDs = DataManager.shared.pinnedIDs
-        // Preserve pin order by sorting pinned entries by their index in pinnedIDs
         pinnedEntries = result
-            .filter  { pinnedIDs.contains($0.id.uuidString) }
-            .sorted  { (pinnedIDs.firstIndex(of: $0.id.uuidString) ?? 0) <
-                       (pinnedIDs.firstIndex(of: $1.id.uuidString) ?? 0) }
-        entries = result.filter { !pinnedIDs.contains($0.id.uuidString) }
+            .filter  { pinnedIDs.contains($0.checkin.id) }
+            .sorted  { (pinnedIDs.firstIndex(of: $0.checkin.id) ?? 0) <
+                       (pinnedIDs.firstIndex(of: $1.checkin.id) ?? 0) }
+        entries = result.filter { !pinnedIDs.contains($0.checkin.id) }
 
         DispatchQueue.main.async { self.onEntriesUpdated?() }
     }
