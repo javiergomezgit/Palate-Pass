@@ -394,26 +394,44 @@ final class AddEntryViewController: UIViewController {
                 photoGallery.reloadData()
             } else {
                 let urls = viewModel.initialImageURLs
-                guard !urls.isEmpty else { photoGallery.reloadData(); return }
-                let group = DispatchGroup()
-                var downloaded = [Int: UIImage]()
-                for (i, url) in urls.enumerated() {
-                    group.enter()
-                    ImageLoader.shared.load(urlString: url) { image in
-                        if let image { downloaded[i] = image }
-                        group.leave()
+                if !urls.isEmpty {
+                    let group = DispatchGroup()
+                    var downloaded = [Int: UIImage]()
+                    for (i, url) in urls.enumerated() {
+                        group.enter()
+                        ImageLoader.shared.load(urlString: url) { image in
+                            if let image { downloaded[i] = image }
+                            group.leave()
+                        }
                     }
-                }
-                group.notify(queue: .main) { [weak self] in
-                    guard let self else { return }
-                    self.viewModel.selectedImages = (0..<urls.count).compactMap { downloaded[$0] }
-                    self.photoGallery.reloadData()
+                    group.notify(queue: .main) { [weak self] in
+                        guard let self else { return }
+                        self.viewModel.selectedImages = (0..<urls.count).compactMap { downloaded[$0] }
+                        self.photoGallery.reloadData()
+                    }
+                } else {
+                    photoGallery.reloadData()
                 }
             }
         }
 
         updatePlaceFieldState()
         updateSaveButtonState()
+
+        // If editing and place name is missing, shake the field so the user
+        // knows exactly what's blocking the Save button.
+        if viewModel.isEditing && (placeField.text?.trimmingCharacters(in: .whitespaces).isEmpty ?? true) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                guard let self else { return }
+                self.shake(self.placeField)
+                self.placeField.layer.borderColor = UIColor.systemRed.cgColor
+                self.placeField.layer.borderWidth = 1
+                self.placeField.layer.cornerRadius = 6
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    self.placeField.layer.borderWidth = 0
+                }
+            }
+        }
     }
 
     private func clearForm() {
@@ -621,12 +639,31 @@ final class AddEntryViewController: UIViewController {
 extension AddEntryViewController: UITextFieldDelegate {
     func textFieldShouldBeginEditing(_ textField: UITextField) -> Bool {
         if textField === placeField {
-            if !viewModel.placeIsClaimed {
+            if viewModel.placeIsClaimed {
+                showClaimedPlaceOptions()
+            } else {
                 presentPlacePicker()
             }
             return false
         }
         return true
+    }
+
+    private func showClaimedPlaceOptions() {
+        let sheet = UIAlertController(
+            title: "Linked Business",
+            message: "This place is linked to a verified business listing. You can still edit your rating, comment, and other details.",
+            preferredStyle: .actionSheet
+        )
+        sheet.addAction(UIAlertAction(title: "Change Place", style: .default) { [weak self] _ in
+            guard let self else { return }
+            self.viewModel.placeIsClaimed = false
+            self.updatePlaceFieldState()
+            self.presentPlacePicker()
+        })
+        sheet.addAction(UIAlertAction(title: "Keep as Is", style: .cancel))
+        sheet.popoverPresentationController?.sourceView = placeField
+        present(sheet, animated: true)
     }
 }
 

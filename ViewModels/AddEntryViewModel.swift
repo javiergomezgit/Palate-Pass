@@ -70,7 +70,9 @@ final class AddEntryViewModel {
         comment        = pc.checkin.personalComment
         visibility     = pc.checkin.visibility
         checkInDate    = pc.checkin.checkedInAt
-        placeIsClaimed = pc.place.claimedBusiness
+        // A claimed business with no name is treated as unclaimed so the
+        // picker opens immediately rather than showing the locked-field state.
+        placeIsClaimed = pc.place.claimedBusiness && !pc.place.name.isEmpty
         if let coord = pc.place.coordinate {
             location = coord
         }
