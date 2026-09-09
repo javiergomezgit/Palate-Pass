@@ -60,13 +60,8 @@ final class HomeViewController: UIViewController {
             action: #selector(showFilter)
         )
 
-        // Left: search button
-        navigationItem.leftBarButtonItem = UIBarButtonItem(
-            image: UIImage(systemName: "magnifyingglass"),
-            style: .plain,
-            target: self,
-            action: #selector(activateSearch)
-        )
+        // Left: rating filter button
+        updateRatingFilterButton()
 
         navigationItem.searchController = searchController
         navigationItem.hidesSearchBarWhenScrolling = true
@@ -81,9 +76,34 @@ final class HomeViewController: UIViewController {
         show(segmentControl.selectedSegmentIndex == 0 ? listVC : mapVC)
     }
 
-    @objc private func activateSearch() {
-        searchController.isActive = true
-        searchController.searchBar.becomeFirstResponder()
+    /// Left bar button doubles as the rating-filter state indicator: filled star when a minimum is active.
+    private func updateRatingFilterButton() {
+        let isActive = viewModel.activeRatingFilter != nil
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            image: UIImage(systemName: isActive ? "star.circle.fill" : "star.circle"),
+            style: .plain,
+            target: self,
+            action: #selector(showRatingFilter)
+        )
+    }
+
+    @objc private func showRatingFilter() {
+        let alert = UIAlertController(title: "Filter by Rating", message: nil, preferredStyle: .actionSheet)
+        alert.addAction(UIAlertAction(title: "All Ratings", style: .default) { [weak self] _ in
+            self?.viewModel.applyRatingFilter(nil)
+            self?.updateRatingFilterButton()
+        })
+        for min in stride(from: 5, through: 1, by: -1) {
+            let stars = String(repeating: "⭐", count: min)
+            let title = min == 5 ? "\(stars) 5" : "\(stars) \(min)+"
+            alert.addAction(UIAlertAction(title: title, style: .default) { [weak self] _ in
+                self?.viewModel.applyRatingFilter(Double(min))
+                self?.updateRatingFilterButton()
+            })
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.popoverPresentationController?.barButtonItem = navigationItem.leftBarButtonItem
+        present(alert, animated: true)
     }
 
     @objc private func showFilter() {

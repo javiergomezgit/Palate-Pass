@@ -21,6 +21,8 @@ final class HomeViewModel {
     private(set) var entries: [PlaceCheckin] = []
 
     private(set) var activeFilter: FoodCategory?
+    /// Minimum personal rating an entry must have to be listed. nil = no rating filter.
+    private(set) var activeRatingFilter: Double?
     private(set) var searchQuery:  String = ""
     private(set) var isFetching    = false
 
@@ -45,6 +47,11 @@ final class HomeViewModel {
 
     func applyFilter(_ category: FoodCategory?) {
         activeFilter = category
+        reload()
+    }
+
+    func applyRatingFilter(_ minimumRating: Double?) {
+        activeRatingFilter = minimumRating
         reload()
     }
 
@@ -131,6 +138,10 @@ final class HomeViewModel {
 
         if let cat = activeFilter {
             result = result.filter { FoodCategory(rawValue: $0.place.category) == cat }
+        }
+
+        if let minRating = activeRatingFilter {
+            result = result.filter { $0.checkin.personalRating >= minRating }
         }
 
         let q = searchQuery.trimmingCharacters(in: .whitespaces)
