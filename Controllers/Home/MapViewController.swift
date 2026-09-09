@@ -12,6 +12,9 @@ final class EntryAnnotation: NSObject, MKAnnotation {
     var subtitle: String?
     let placeCheckin: PlaceCheckin
 
+    /// Personal rating, rendered under the category line in the callout.
+    var rating: Double { placeCheckin.checkin.personalRating }
+
     init(placeCheckin pc: PlaceCheckin) {
         self.placeCheckin = pc
         self.coordinate = pc.place.coordinate ?? CLLocationCoordinate2D()
@@ -99,15 +102,31 @@ extension MapViewController: MKMapViewDelegate {
         view?.glyphText       = ann.placeCheckin.place.foodCategory.emoji
         view?.markerTintColor = Theme.categoryColor(ann.placeCheckin.place.foodCategory)
         view?.canShowCallout  = true
-        view?.rightCalloutAccessoryView = UIButton(type: .detailDisclosure)
+
+        // Arrow accessory — taps launch directions rather than opening the entry.
+        let directions = UIButton(type: .system)
+        directions.setImage(
+            UIImage(systemName: "arrow.triangle.turn.up.right.circle.fill",
+                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 26, weight: .regular)),
+            for: .normal
+        )
+        directions.tintColor = Theme.accent
+        directions.sizeToFit()
+        view?.rightCalloutAccessoryView = directions
+
+        // Star rating, shown below the category subtitle.
+        let stars = UILabel()
+        stars.attributedText = StarRatingView.compactAttributedStars(for: ann.rating)
+        view?.detailCalloutAccessoryView = stars
+
         return view
     }
 
     func mapView(_ mapView: MKMapView,
                  annotationView view: MKAnnotationView,
                  calloutAccessoryControlTapped control: UIControl) {
-        guard let ann = view.annotation as? EntryAnnotation else { return }
-        let detail = EntryDetailViewController(viewModel: EntryDetailViewModel(placeCheckin: ann.placeCheckin))
-        navigationController?.pushViewController(detail, animated: true)
+        guard let ann = view.annotation as? EntryAnnotation,
+              let coord = ann.placeCheckin.place.coordinate else { return }
+        MapsNavigator.openDirections(to: coord, name: ann.placeCheckin.place.name)
     }
 }

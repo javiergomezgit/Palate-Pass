@@ -99,3 +99,41 @@ final class StarRatingView: UIView {
         }
     }
 }
+
+// MARK: – Compact star text
+
+extension StarRatingView {
+
+    /// Inline star row for tight spaces (map callouts) where the full control is too large.
+    /// Mirrors `updateStars()` — full, half, and empty stars, followed by the numeric rating.
+    static func compactAttributedStars(for rating: Double, pointSize: CGFloat = 12) -> NSAttributedString {
+        let cfg = UIImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
+        let out = NSMutableAttributedString()
+
+        for i in 1...5 {
+            let val = Double(i)
+            let name: String
+            if rating >= val {
+                name = "star.fill"
+            } else if rating >= val - 0.5 {
+                name = "star.leadinghalf.filled"
+            } else {
+                name = "star"
+            }
+            let attachment = NSTextAttachment()
+            attachment.image = UIImage(systemName: name, withConfiguration: cfg)?
+                .withTintColor(Theme.accent, renderingMode: .alwaysOriginal)
+            out.append(NSAttributedString(attachment: attachment))
+            out.append(NSAttributedString(string: " "))
+        }
+
+        out.append(NSAttributedString(
+            string: String(format: "%.1f", rating),
+            attributes: [
+                .font: UIFont.systemFont(ofSize: pointSize + 1, weight: .semibold),
+                .foregroundColor: Theme.accent
+            ]
+        ))
+        return out
+    }
+}

@@ -127,6 +127,18 @@ final class EntryDetailViewController: UIViewController, UIScrollViewDelegate {
         return mv
     }()
 
+    private lazy var navigateButton: UIButton = {
+        var cfg = UIButton.Configuration.filled()
+        cfg.title = "Navigate here"
+        cfg.image = UIImage(systemName: "arrow.triangle.turn.up.right.circle.fill")
+        cfg.imagePadding = 8
+        cfg.baseBackgroundColor = Theme.accent
+        cfg.cornerStyle = .large
+        let b = UIButton(configuration: cfg)
+        b.addTarget(self, action: #selector(navigateTapped), for: .touchUpInside)
+        return b
+    }()
+
     // MARK: – Lifecycle
 
     override func viewDidLoad() {
@@ -167,6 +179,14 @@ final class EntryDetailViewController: UIViewController, UIScrollViewDelegate {
     @objc private func editTapped() {
         let addVC = AddEntryViewController(viewModel: viewModel.editViewModel)
         navigationController?.pushViewController(addVC, animated: true)
+    }
+
+    @objc private func navigateTapped() {
+        guard let coord = viewModel.coordinate else { return }
+        MapsNavigator.openDirections(
+            to: CLLocationCoordinate2D(latitude: coord.latitude, longitude: coord.longitude),
+            name: viewModel.placeName
+        )
     }
 
     @objc private func visibilityBadgeTapped() {
@@ -302,6 +322,9 @@ final class EntryDetailViewController: UIViewController, UIScrollViewDelegate {
             miniMap.addAnnotation(pin)
             stack.addArrangedSubview(miniMap)
             miniMap.heightAnchor.constraint(equalToConstant: 160).isActive = true
+
+            stack.addArrangedSubview(navigateButton)
+            navigateButton.heightAnchor.constraint(equalToConstant: 48).isActive = true
         }
     }
 
