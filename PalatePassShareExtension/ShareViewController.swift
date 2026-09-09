@@ -11,9 +11,21 @@ class ShareViewController: UIViewController {
     private var sharedImage: UIImage?
     private var latitude:    Double?
     private var longitude:   Double?
+    private var captureDate: Date?
     private var starRating:  Int = 0
 
     // MARK: – UI
+
+    /// Shows the date the entry will be filed under, so it's clear the photo's own
+    /// timestamp was picked up rather than "now".
+    private let dateLabel: UILabel = {
+        let l = UILabel()
+        l.font = .systemFont(ofSize: 12, weight: .medium)
+        l.textColor = .secondaryLabel
+        l.textAlignment = .center
+        l.translatesAutoresizingMaskIntoConstraints = false
+        return l
+    }()
 
     private let sheet: UIView = {
         let v = UIView()
@@ -213,7 +225,8 @@ class ShareViewController: UIViewController {
         buttonStack.translatesAutoresizingMaskIntoConstraints = false
 
         [nameCard, starsCard, commentCard, buttonStack,
-         nameLabel, starsLabel, commentLabel].forEach { content.addSubview($0) }
+         nameLabel, starsLabel, commentLabel, dateLabel].forEach { content.addSubview($0) }
+        updateDateLabel()
 
         nameCard.addSubview(nameField)
         starsCard.addSubview(starStack)
@@ -225,8 +238,13 @@ class ShareViewController: UIViewController {
             thumbView.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
             thumbView.heightAnchor.constraint(equalToConstant: 180),
 
+            // Capture date
+            dateLabel.topAnchor.constraint(equalTo: thumbView.bottomAnchor, constant: 10),
+            dateLabel.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 16),
+            dateLabel.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
+
             // Place
-            nameLabel.topAnchor.constraint(equalTo: thumbView.bottomAnchor, constant: 20),
+            nameLabel.topAnchor.constraint(equalTo: dateLabel.bottomAnchor, constant: 16),
             nameLabel.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 16),
 
             nameCard.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 6),
@@ -321,36 +339,129 @@ class ShareViewController: UIViewController {
         else { return }
 
         provider.loadItem(forTypeIdentifier: "public.image", options: nil) { [weak self] data, _ in
-            var image: UIImage?
-            var sourceURL: URL?
+            var image:    UIImage?
+            var source:   CGImageSource?
+            var fileDate: Date?
 
+            // loadItem hands back a URL, raw Data, or an already-decoded UIImage
+            // depending on the source. Only the first two carry metadata — a UIImage
+            // has already lost it.
             if let url = data as? URL {
                 image    = UIImage(contentsOfFile: url.path)
-                sourceURL = url
+                source   = CGImageSourceCreateWithURL(url as CFURL, nil)
+                fileDate = (try? url.resourceValues(forKeys: [.creationDateKey]))?.creationDate
+            } else if let raw = data as? Data {
+                image  = UIImage(data: raw)
+                source = CGImageSourceCreateWithData(raw as CFData, nil)
             } else if let img = data as? UIImage {
                 image = img
             }
 
             guard let image else { return }
 
-            // Extract EXIF GPS silently
-            if let url   = sourceURL,
-               let src   = CGImageSourceCreateWithURL(url as CFURL, nil),
-               let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [String: Any],
-               let gps   = props[kCGImagePropertyGPSDictionary as String] as? [String: Any] {
-                var lat = gps[kCGImagePropertyGPSLatitude  as String] as? Double
-                var lng = gps[kCGImagePropertyGPSLongitude as String] as? Double
-                if gps[kCGImagePropertyGPSLatitudeRef  as String] as? String == "S" { lat?  *= -1 }
-                if gps[kCGImagePropertyGPSLongitudeRef as String] as? String == "W" { lng? *= -1 }
-                self?.latitude  = lat
-                self?.longitude = lng
+            var latitude:  Double?
+            var longitude: Double?
+            var captured:  Date?
+
+            if let source,
+               let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] {
+
+                if let gps = props[kCGImagePropertyGPSDictionary as String] as? [String: Any] {
+                    var lat = gps[kCGImagePropertyGPSLatitude  as String] as? Double
+                    var lng = gps[kCGImagePropertyGPSLongitude as String] as? Double
+                    if gps[kCGImagePropertyGPSLatitudeRef  as String] as? String == "S" { lat?  *= -1 }
+                    if gps[kCGImagePropertyGPSLongitudeRef as String] as? String == "W" { lng? *= -1 }
+                    latitude  = lat
+                    longitude = lng
+                }
+
+                captured = Self.captureDate(from: props)
             }
 
+            // Screenshots and edited copies often carry no EXIF timestamp; the file's
+            // own creation date is the next best thing.
+            let resolved = captured ?? fileDate
+
             DispatchQueue.main.async {
-                self?.sharedImage = image
-                self?.thumbView.image = image
+                guard let self else { return }
+                self.sharedImage = image
+                self.latitude    = latitude
+                self.longitude   = longitude
+                self.captureDate = resolved
+                self.thumbView.image = image
+                self.updateDateLabel()
             }
         }
+    }
+
+    // MARK: – Capture date
+
+    private func updateDateLabel() {
+        let fmt = DateFormatter()
+        fmt.dateStyle = .medium
+        fmt.timeStyle = .short
+        fmt.doesRelativeDateFormatting = true
+        if let captureDate {
+            dateLabel.text = "📅 \(fmt.string(from: captureDate))"
+        } else {
+            dateLabel.text = "📅 \(fmt.string(from: Date())) · no photo date found"
+        }
+    }
+
+    /// Pulls the moment the photo was taken out of its metadata.
+    /// Prefers EXIF, then the TIFF tag, then the GPS clock.
+    nonisolated private static func captureDate(from properties: [String: Any]) -> Date? {
+        let exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any]
+        let tiff = properties[kCGImagePropertyTIFFDictionary as String] as? [String: Any]
+
+        // EXIF timestamps are bare wall-clock readings with no zone. Newer files record
+        // the original UTC offset next to them; without it, local time is the only
+        // sensible reading — which is also what the photo appears to say in Photos.
+        let offset = (exif?[kCGImagePropertyExifOffsetTimeOriginal  as String] as? String)
+                  ?? (exif?[kCGImagePropertyExifOffsetTimeDigitized as String] as? String)
+
+        let stamps = [
+            exif?[kCGImagePropertyExifDateTimeOriginal  as String] as? String,
+            exif?[kCGImagePropertyExifDateTimeDigitized as String] as? String,
+            tiff?[kCGImagePropertyTIFFDateTime          as String] as? String
+        ]
+        for stamp in stamps.compactMap({ $0 }) {
+            if let date = parseEXIFTimestamp(stamp, offset: offset) { return date }
+        }
+
+        // GPS time is always UTC, so it needs no offset guessing.
+        if let gps  = properties[kCGImagePropertyGPSDictionary as String] as? [String: Any],
+           let day  = gps[kCGImagePropertyGPSDateStamp as String] as? String,
+           let time = gps[kCGImagePropertyGPSTimeStamp as String] as? String {
+            let fmt = DateFormatter()
+            fmt.locale     = Locale(identifier: "en_US_POSIX")
+            fmt.timeZone   = TimeZone(secondsFromGMT: 0)
+            fmt.dateFormat = "yyyy:MM:dd HH:mm:ss"
+            let seconds = time.split(separator: ".").first.map(String.init) ?? time
+            if let date = fmt.date(from: "\(day) \(seconds)") { return date }
+        }
+
+        return nil
+    }
+
+    /// EXIF timestamps look like "2026:03:03 19:42:11".
+    nonisolated private static func parseEXIFTimestamp(_ stamp: String, offset: String?) -> Date? {
+        let fmt = DateFormatter()
+        fmt.locale     = Locale(identifier: "en_US_POSIX")
+        fmt.dateFormat = "yyyy:MM:dd HH:mm:ss"
+        fmt.timeZone   = offset.flatMap(timeZone(fromEXIFOffset:)) ?? .current
+        return fmt.date(from: stamp)
+    }
+
+    /// Parses an EXIF UTC offset such as "+02:00" or "-05:30".
+    nonisolated private static func timeZone(fromEXIFOffset offset: String) -> TimeZone? {
+        let parts = offset.split(separator: ":")
+        guard parts.count == 2,
+              let hours   = Int(parts[0]),
+              let minutes = Int(parts[1])
+        else { return nil }
+        let sign = offset.hasPrefix("-") ? -1 : 1
+        return TimeZone(secondsFromGMT: hours * 3600 + sign * minutes * 60)
     }
 
     // MARK: – Actions
@@ -386,6 +497,7 @@ class ShareViewController: UIViewController {
         defaults.set(nameField.text ?? "",                            forKey: "sharedEntryName")
         defaults.set(starRating,                                      forKey: "sharedEntryRating")
         defaults.set(commentView.text ?? "",                          forKey: "sharedEntryComment")
+        defaults.set(captureDate?.timeIntervalSince1970 ?? 0,         forKey: "sharedEntryDate")
         defaults.synchronize()
 
         // Animate confirmation then dismiss

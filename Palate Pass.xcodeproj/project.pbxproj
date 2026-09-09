@@ -39,6 +39,9 @@
 		22AECB122FECA12300C0D9B5 /* UIAlertController+Simple.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22AECAE72FECA12300C0D9B5 /* UIAlertController+Simple.swift */; };
 		22AECB132FECA12300C0D9B5 /* PhoneOTPViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22AECAD82FECA12300C0D9B5 /* PhoneOTPViewController.swift */; };
 		22AECB142FECA12300C0D9B5 /* DataManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22AECAEC2FECA12300C0D9B5 /* DataManager.swift */; };
+		22AEC9132FECA12300C0D9B5 /* PhotoRecoveryViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22AEC9032FECA12300C0D9B5 /* PhotoRecoveryViewController.swift */; };
+		22AEC9122FECA12300C0D9B5 /* SyncStatusViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22AEC9022FECA12300C0D9B5 /* SyncStatusViewController.swift */; };
+		22AEC9112FECA12300C0D9B5 /* SyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22AEC9012FECA12300C0D9B5 /* SyncCoordinator.swift */; };
 		22AECB162FECA12300C0D9B5 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 22AECAF72FECA12300C0D9B5 /* LaunchScreen.storyboard */; };
 		22AECB172FECA12300C0D9B5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 22AECAE52FECA12300C0D9B5 /* Assets.xcassets */; };
 		22AECB5C2FECA32900C0D9B5 /* AddEntryViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22AECB5B2FECA32400C0D9B5 /* AddEntryViewController.swift */; };
@@ -82,6 +85,9 @@
 		22AECAE92FECA12300C0D9B5 /* FoodEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodEntry.swift; sourceTree = "<group>"; };
 		22AECAEA2FECA12300C0D9B5 /* UserProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserProfile.swift; sourceTree = "<group>"; };
 		22AECAEC2FECA12300C0D9B5 /* DataManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataManager.swift; sourceTree = "<group>"; };
+		22AEC9032FECA12300C0D9B5 /* PhotoRecoveryViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoRecoveryViewController.swift; sourceTree = "<group>"; };
+		22AEC9022FECA12300C0D9B5 /* SyncStatusViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStatusViewController.swift; sourceTree = "<group>"; };
+		22AEC9012FECA12300C0D9B5 /* SyncCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncCoordinator.swift; sourceTree = "<group>"; };
 		22AECAED2FECA12300C0D9B5 /* EntryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryService.swift; sourceTree = "<group>"; };
 		22AECAEE2FECA12300C0D9B5 /* ImageLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageLoader.swift; sourceTree = "<group>"; };
 		22AECAEF2FECA12300C0D9B5 /* UserService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserService.swift; sourceTree = "<group>"; };
@@ -215,6 +221,8 @@
 		22AECAE12FECA12300C0D9B5 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				22AEC9032FECA12300C0D9B5 /* PhotoRecoveryViewController.swift */,
+				22AEC9022FECA12300C0D9B5 /* SyncStatusViewController.swift */,
 				22AECAE02FECA12300C0D9B5 /* SettingsViewController.swift */,
 			);
 			path = Settings;
@@ -256,6 +264,7 @@
 		22AECAF02FECA12300C0D9B5 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				22AEC9012FECA12300C0D9B5 /* SyncCoordinator.swift */,
 				22AECAEC2FECA12300C0D9B5 /* DataManager.swift */,
 				22AECAED2FECA12300C0D9B5 /* EntryService.swift */,
 				22AECAEE2FECA12300C0D9B5 /* ImageLoader.swift */,
@@ -436,6 +445,9 @@
 				22AECB5C2FECA32900C0D9B5 /* AddEntryViewController.swift in Sources */,
 				22AECB132FECA12300C0D9B5 /* PhoneOTPViewController.swift in Sources */,
 				22AECB142FECA12300C0D9B5 /* DataManager.swift in Sources */,
+				22AEC9132FECA12300C0D9B5 /* PhotoRecoveryViewController.swift in Sources */,
+				22AEC9122FECA12300C0D9B5 /* SyncStatusViewController.swift in Sources */,
+				22AEC9112FECA12300C0D9B5 /* SyncCoordinator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

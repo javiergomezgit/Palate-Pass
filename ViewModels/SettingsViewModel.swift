@@ -102,6 +102,17 @@ final class SettingsViewModel {
         UserDefaults.standard.set(order, forKey: "sortOrder")
     }
 
+    // MARK: – Sync status
+
+    var syncStatusLabel: String { SyncCoordinator.shared.statusSummary }
+
+    var orphanedPhotoCount: Int { DataManager.shared.orphanedImageFilenames().count }
+
+    var orphanedPhotoLabel: String {
+        let n = orphanedPhotoCount
+        return n == 0 ? "None" : "\(n) unattached"
+    }
+
     // MARK: – Data operations
 
     func exportData() {

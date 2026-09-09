@@ -31,6 +31,11 @@ final class HomeViewModel {
             self, selector: #selector(reload),
             name: .entriesDidChange, object: nil
         )
+        // Redraws the "not synced" badges as the outbox drains.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(reload),
+            name: .syncStateDidChange, object: nil
+        )
         reload()
         fetchFromFirestore()
         fetchPinnedIDs()
@@ -49,11 +54,24 @@ final class HomeViewModel {
     }
 
     func delete(_ pc: PlaceCheckin) {
-        guard let uid = Auth.auth().currentUser?.uid else { return }
         DataManager.shared.unpin(pc)
         DataManager.shared.delete(pc)
-        EntryService.shared.delete(pc: pc, uid: uid)
+        SyncCoordinator.shared.submit(kind: .delete, placeCheckin: pc)
         syncPinsToFirestore()
+    }
+
+    /// Changes an entry's privacy. Queued, so it survives being done offline.
+    func setVisibility(_ visibility: Visibility, for pc: PlaceCheckin) {
+        let previous = pc.checkin
+        var updated = pc
+        updated.checkin.visibility = visibility
+        DataManager.shared.update(updated)
+        SyncCoordinator.shared.submit(kind: .update, placeCheckin: updated, oldCheckin: previous)
+    }
+
+    /// True when this entry has changes that have not reached Firebase yet.
+    func isPending(_ pc: PlaceCheckin) -> Bool {
+        DataManager.shared.isPending(id: pc.checkin.id)
     }
 
     func togglePin(_ pc: PlaceCheckin) {
@@ -83,7 +101,11 @@ final class HomeViewModel {
             self.isFetching = false
             switch result {
             case .success(let fetched):
-                DataManager.shared.replaceAll(fetched)
+                // merge, not replace: entries still queued for upload must survive.
+                // Anything the cloud has never seen gets queued rather than dropped.
+                let stranded = DataManager.shared.merge(cloud: fetched)
+                SyncCoordinator.shared.adopt(stranded)
+                SyncCoordinator.shared.flush()
             case .failure(let error):
                 self.onFetchError?(error.localizedDescription)
             }

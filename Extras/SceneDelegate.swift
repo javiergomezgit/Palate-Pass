@@ -49,6 +49,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     // MARK: – Scene active (picks up data saved by Share Extension)
 
     func sceneDidBecomeActive(_ scene: UIScene) {
+        // Coming back to the app is a good moment to drain anything still queued.
+        SyncCoordinator.shared.flush()
         checkForSharedData()
     }
 
@@ -62,19 +64,24 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let name      = defaults.string(forKey: "sharedEntryName")   ?? ""
         let rating    = defaults.integer(forKey: "sharedEntryRating")
         let comment   = defaults.string(forKey: "sharedEntryComment") ?? ""
+        let dateStamp = defaults.double(forKey: "sharedEntryDate")
 
         ["sharedImage", "sharedLatitude", "sharedLongitude",
-         "sharedEntryName", "sharedEntryRating", "sharedEntryComment"]
+         "sharedEntryName", "sharedEntryRating", "sharedEntryComment",
+         "sharedEntryDate"]
             .forEach { defaults.removeObject(forKey: $0) }
 
         let image = UIImage(data: imageData)
         let coordinate: CLLocationCoordinate2D? = (latitude != 0 || longitude != 0)
             ? CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
             : nil
+        // 0 means the extension found no date in the photo — fall back to "now".
+        let captureDate: Date? = dateStamp > 0 ? Date(timeIntervalSince1970: dateStamp) : nil
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             self?.openAddEntry(image: image, coordinate: coordinate,
-                               name: name, rating: Double(rating), comment: comment)
+                               name: name, rating: Double(rating), comment: comment,
+                               captureDate: captureDate)
         }
     }
 
@@ -82,7 +89,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                               coordinate: CLLocationCoordinate2D?,
                               name: String = "",
                               rating: Double = 0,
-                              comment: String = "") {
+                              comment: String = "",
+                              captureDate: Date? = nil) {
         guard let tabBar = window?.rootViewController as? MainTabBarController else { return }
 
         let vm = AddEntryViewModel()
@@ -91,14 +99,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if !name.isEmpty    { vm.placeName  = name }
         if rating > 0       { vm.rating     = rating }
         if !comment.isEmpty { vm.comment    = comment }
+        if let captureDate  { vm.checkInDate = captureDate }
         vm.visibility = .private
 
         // Save immediately — entry will appear in the list for the user to edit if needed
         vm.onSaveSuccess = { [weak tabBar] in
             tabBar?.selectedIndex = 0   // go to home/list tab
         }
-        vm.onSaveError = { [weak tabBar] _ in
-            tabBar?.selectedIndex = 0   // still navigate; entry is saved locally
+        vm.onSaveQueued = { [weak tabBar] _ in
+            tabBar?.selectedIndex = 0   // still navigate; the entry is queued for upload
         }
         vm.onValidationError = { [weak tabBar] _ in
             // name or rating missing — open AddEntry so user can complete it

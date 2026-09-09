@@ -79,20 +79,21 @@ final class EntryDetailViewModel {
     }
 
     func delete() {
-        guard let uid = Auth.auth().currentUser?.uid else { return }
-        DataManager.shared.delete(placeCheckin)
-        EntryService.shared.delete(pc: placeCheckin, uid: uid)
+        let pc = placeCheckin
+        DataManager.shared.delete(pc)
+        SyncCoordinator.shared.submit(kind: .delete, placeCheckin: pc)
     }
 
     // MARK: – Private
 
     private func applyVisibility(_ newVisibility: Visibility) {
-        guard let uid = Auth.auth().currentUser?.uid else { return }
+        let previous = placeCheckin.checkin
         var updated = placeCheckin
         updated.checkin.visibility = newVisibility
         DataManager.shared.update(updated)
         placeCheckin = updated
         onEntryUpdated?()
-        EntryService.shared.changeVisibility(placeCheckin, to: newVisibility, uid: uid)
+        // Queued rather than written directly, so toggling visibility offline is not lost.
+        SyncCoordinator.shared.submit(kind: .update, placeCheckin: updated, oldCheckin: previous)
     }
 }

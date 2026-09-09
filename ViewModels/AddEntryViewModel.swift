@@ -31,8 +31,9 @@ final class AddEntryViewModel {
     var onValidationError: ((String) -> Void)?
     /// Fires just before the async upload starts — use it to show a spinner.
     var onSaving:          (() -> Void)?
-    /// Fires if the cloud upload fails. Entry is already saved locally.
-    var onSaveError:       ((String) -> Void)?
+    /// Fires when the entry could not reach the cloud yet. It is saved locally and
+    /// queued — SyncCoordinator uploads it automatically once there is a connection.
+    var onSaveQueued:      ((String) -> Void)?
 
     // MARK: – Read-only context
 
@@ -89,7 +90,7 @@ final class AddEntryViewModel {
             onValidationError?("Please tap at least one star.")
             return
         }
-        guard let uid = Auth.auth().currentUser?.uid else {
+        guard Auth.auth().currentUser != nil else {
             onValidationError?("Not signed in.")
             return
         }
@@ -144,24 +145,18 @@ final class AddEntryViewModel {
 
         let oldURLs = imagesChanged ? (editingPlaceCheckin?.checkin.imageURLs ?? []) : []
 
-        print("💾 save path: isNew=\(isNew), name=\(placeName), claimed=\(placeIsClaimed)")
-        if isNew {
-            EntryService.shared.create(pc, images: selectedImages, uid: uid) { [weak self] error in
-                if let error {
-                    self?.onSaveError?("Saved locally. Cloud sync failed: \(error.localizedDescription)")
-                } else {
-                    self?.onSaveSuccess?()
-                }
-            }
-        } else {
-            guard let oldCheckin = editingPlaceCheckin?.checkin else { return }
-            EntryService.shared.update(pc, oldCheckin: oldCheckin, images: selectedImages,
-                                       oldImageURLs: oldURLs, uid: uid) { [weak self] error in
-                if let error {
-                    self?.onSaveError?("Saved locally. Cloud sync failed: \(error.localizedDescription)")
-                } else {
-                    self?.onSaveSuccess?()
-                }
+        SyncCoordinator.shared.submit(
+            kind:          isNew ? .create : .update,
+            placeCheckin:  pc,
+            oldCheckin:    editingPlaceCheckin?.checkin,
+            oldImageURLs:  oldURLs,
+            imagesChanged: imagesChanged
+        ) { [weak self] result in
+            switch result {
+            case .synced:
+                self?.onSaveSuccess?()
+            case .queued(let reason):
+                self?.onSaveQueued?(reason)
             }
         }
     }

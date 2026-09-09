@@ -9,6 +9,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
         FirebaseApp.configure()
+        // Begins watching connectivity so queued writes replay the moment we're online.
+        SyncCoordinator.shared.start()
         return true
     }
 

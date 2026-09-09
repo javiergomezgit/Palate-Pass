@@ -187,7 +187,7 @@ extension ListViewController: UITableViewDataSource, UITableViewDelegate {
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: EntryCell.reuseID, for: indexPath) as! EntryCell
         guard let pc = entryFor(indexPath) else { return cell }
-        cell.configure(with: pc)
+        cell.configure(with: pc, isPending: viewModel.isPending(pc))
         cell.onShare = { [weak self] image in
             self?.shareEntry(pc, image: image)
         }
@@ -222,13 +222,8 @@ extension ListViewController: UITableViewDataSource, UITableViewDelegate {
         case .private: nextVisibility = .public;  visibilityTitle = "Make Public";  visibilityIcon = "globe"
         }
 
-        let privacy = UIContextualAction(style: .normal, title: visibilityTitle) { _, _, done in
-            var updated = pc
-            updated.checkin.visibility = nextVisibility
-            DataManager.shared.update(updated)
-            if let uid = Auth.auth().currentUser?.uid {
-                EntryService.shared.changeVisibility(updated, to: nextVisibility, uid: uid)
-            }
+        let privacy = UIContextualAction(style: .normal, title: visibilityTitle) { [weak self] _, _, done in
+            self?.viewModel.setVisibility(nextVisibility, for: pc)
             done(true)
         }
         privacy.backgroundColor = .systemIndigo

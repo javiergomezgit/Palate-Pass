@@ -59,6 +59,14 @@ final class SettingsViewController: UIViewController {
         ],
         // Data
         [
+            Row(title: "Sync Status", subtitle: viewModel.syncStatusLabel,
+                accessory: .disclosureIndicator, isDestructive: false) { [weak self] in
+                self?.navigationController?.pushViewController(SyncStatusViewController(), animated: true)
+            },
+            Row(title: "Recover Photos", subtitle: viewModel.orphanedPhotoLabel,
+                accessory: .disclosureIndicator, isDestructive: false) { [weak self] in
+                self?.navigationController?.pushViewController(PhotoRecoveryViewController(), animated: true)
+            },
             Row(title: "Export Entries", subtitle: "Share as JSON",
                 accessory: .disclosureIndicator, isDestructive: false) { [weak self] in
                 self?.viewModel.exportData()

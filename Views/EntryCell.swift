@@ -74,6 +74,20 @@ final class EntryCell: UITableViewCell {
         return l
     }()
 
+    /// Shown while the entry has changes waiting to upload.
+    private let syncBadge: UILabel = {
+        let l = UILabel()
+        l.font = .systemFont(ofSize: 10, weight: .semibold)
+        l.textColor = .white
+        l.backgroundColor = .systemOrange
+        l.text = "  ↑ Not synced  "
+        l.layer.cornerRadius = 7
+        l.clipsToBounds = true
+        l.textAlignment = .center
+        l.setContentHuggingPriority(.required, for: .horizontal)
+        return l
+    }()
+
     private let dateLabel: UILabel = {
         let l = UILabel()
         l.font = .systemFont(ofSize: 11)
@@ -137,7 +151,7 @@ final class EntryCell: UITableViewCell {
         topRow.spacing = 6
         topRow.alignment = .center
 
-        let bottomRow = UIStackView(arrangedSubviews: [visibilityLabel, UIView()])
+        let bottomRow = UIStackView(arrangedSubviews: [visibilityLabel, syncBadge, UIView()])
         bottomRow.axis = .horizontal
         bottomRow.spacing = 4
 
@@ -188,8 +202,9 @@ final class EntryCell: UITableViewCell {
 
     // MARK: – Configure
 
-    func configure(with pc: PlaceCheckin) {
+    func configure(with pc: PlaceCheckin, isPending: Bool = false) {
         placeLabel.text = pc.place.name.isEmpty ? "Unknown place" : pc.place.name
+        syncBadge.isHidden = !isPending
 
         let color = Theme.categoryColor(pc.place.foodCategory)
         categoryPill.text = " \(pc.place.foodCategory.emoji) "

@@ -28,6 +28,10 @@ final class AddEntryViewController: UIViewController {
     /// When set by SceneDelegate (Share Extension flow), skips live location request.
     var prefillCoordinate: CLLocationCoordinate2D?
 
+    /// Fires once the entry has been stored — synced or queued. Used by photo recovery
+    /// to retire the orphaned file the entry was rebuilt from.
+    var onEntrySaved: (() -> Void)?
+
     // MARK: – Location
 
     private let locationManager = CLLocationManager()
@@ -192,6 +196,7 @@ final class AddEntryViewController: UIViewController {
         viewModel.onSaveSuccess = { [weak self] in
             guard let self else { return }
             self.setSaveLoading(false)
+            self.onEntrySaved?()
             if self.viewModel.isEditing {
                 self.navigationController?.popViewController(animated: true)
             } else {
@@ -200,11 +205,19 @@ final class AddEntryViewController: UIViewController {
             }
         }
 
-        viewModel.onSaveError = { [weak self] message in
+        // Queued is a normal outcome, not a failure: the entry is safe on disk and
+        // SyncCoordinator uploads it as soon as there is a connection. Dismiss exactly
+        // as a successful save would, and just say what will happen.
+        viewModel.onSaveQueued = { [weak self] reason in
             guard let self else { return }
             self.setSaveLoading(false)
-            let alert = UIAlertController(title: "Sync Failed", message: message, preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "Keep Locally", style: .default) { [weak self] _ in
+            let banner = UIAlertController(
+                title: "Saved — will upload later",
+                message: "\(reason)\n\nThis entry is stored on your device and uploads automatically once you're back online.",
+                preferredStyle: .alert
+            )
+            self.onEntrySaved?()
+            banner.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in
                 guard let self else { return }
                 if self.viewModel.isEditing {
                     self.navigationController?.popViewController(animated: true)
@@ -213,10 +226,7 @@ final class AddEntryViewController: UIViewController {
                     self.tabBarController?.selectedIndex = 0
                 }
             })
-            alert.addAction(UIAlertAction(title: "Try Again", style: .cancel) { [weak self] _ in
-                self?.viewModel.save()
-            })
-            self.present(alert, animated: true)
+            self.present(banner, animated: true)
         }
 
         viewModel.onValidationError = { [weak self] message in

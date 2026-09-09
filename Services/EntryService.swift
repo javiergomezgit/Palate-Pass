@@ -57,13 +57,21 @@ final class EntryService {
                 uid: String,
                 completion: @escaping (Error?) -> Void) {
         guard !images.isEmpty else {
-            batchCreate(pc, imageURLs: [], uid: uid, completion: completion)
+            // Keep whatever URLs the entry already knows about: a re-queued entry may
+            // have uploaded its photos on an earlier attempt but lost its local copies.
+            batchCreate(pc, imageURLs: pc.checkin.imageURLs, uid: uid, completion: completion)
             return
         }
         uploadImages(images, placeID: pc.place.id, userId: uid) { [weak self] result in
             switch result {
             case .failure(let error):
-                DispatchQueue.main.async { completion(error) }
+                // Storage has no offline queue, but losing the whole entry because its
+                // photos failed is far worse than losing the photos. Write the check-in
+                // anyway, then report the error so SyncCoordinator keeps the operation
+                // queued and retries the images later.
+                self?.batchCreate(pc, imageURLs: [], uid: uid) { writeError in
+                    completion(writeError ?? error)
+                }
             case .success(let urls):
                 var updated = pc
                 let urlStrings = urls.map { $0.absoluteString }
@@ -147,41 +155,6 @@ final class EntryService {
         }
     }
 
-    // MARK: – Change visibility
-
-    /// Updates checkin visibility and manages publicImageURLs on the place accordingly.
-    func changeVisibility(_ pc: PlaceCheckin,
-                          to newVisibility: Visibility,
-                          uid: String,
-                          completion: ((Error?) -> Void)? = nil) {
-        let oldVisibility = pc.checkin.visibility
-        guard oldVisibility != newVisibility else { completion?(nil); return }
-
-        let placeID  = pc.place.id
-        let placeRef = db.collection("places").document(placeID)
-        let checkinRef = db.collection("users").document(uid).collection("checkins").document(placeID)
-        let imageURLs = pc.checkin.imageURLs
-
-        var checkinUpdates: [String: Any] = ["visibility": newVisibility.rawValue]
-        if newVisibility != .shared { checkinUpdates["sharedWith"] = [String]() }
-
-        checkinRef.updateData(checkinUpdates) { error in
-            if let error { DispatchQueue.main.async { completion?(error) }; return }
-
-            if newVisibility == .public && !imageURLs.isEmpty {
-                placeRef.updateData(["publicImageURLs": FieldValue.arrayUnion(imageURLs)]) { error in
-                    DispatchQueue.main.async { completion?(error) }
-                }
-            } else if oldVisibility == .public && !imageURLs.isEmpty {
-                placeRef.updateData(["publicImageURLs": FieldValue.arrayRemove(imageURLs)]) { error in
-                    DispatchQueue.main.async { completion?(error) }
-                }
-            } else {
-                DispatchQueue.main.async { completion?(nil) }
-            }
-        }
-    }
-
     // MARK: – Private: batch create
 
     private func batchCreate(_ pc: PlaceCheckin,
@@ -201,9 +174,10 @@ final class EntryService {
         placeDoc["createdAt"]    = FieldValue.serverTimestamp()
         batch.setData(placeDoc, forDocument: placeRef)
 
+        // checkedInAt comes from firestoreDocument() — it is the date the user picked,
+        // which may be backdated, so it must not be replaced with the server clock.
         var checkinDoc = pc.checkin.firestoreDocument()
-        checkinDoc["imageURLs"]   = imageURLs
-        checkinDoc["checkedInAt"] = FieldValue.serverTimestamp()
+        checkinDoc["imageURLs"] = imageURLs
         batch.setData(checkinDoc, forDocument: checkinRef)
 
         batch.commit { error in
@@ -419,6 +393,7 @@ private extension Checkin {
             "personalRating":  personalRating,
             "personalComment": personalComment,
             "imageURLs":       imageURLs,
+            "checkedInAt":     Timestamp(date: checkedInAt),
             "visibility":      visibility.rawValue,
             "sharedWith":      sharedWith
         ]
