@@ -1,0 +1,29 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Public place records — any authenticated user can create/update
+    match /places/{placeID} {
+      allow read: if true;
+      allow create, update: if request.auth != null;
+      allow delete: if false;
+    }
+
+    // The user's own profile document: displayName, fcmToken, lastSignInAt,
+    // isEmailVerified, pinnedEntryIDs.
+    //
+    // Rules do NOT cascade, so this block is required even though the checkins
+    // subcollection below already matched. Without it, every read of
+    // users/{uid} — UserService.fetchProfile and fetchPinnedIDs — fails with
+    // "Missing or insufficient permissions".
+    match /users/{uid} {
+      allow read, create, update: if request.auth != null && request.auth.uid == uid;
+      allow delete: if false;
+
+      // Private checkins — only the owning user
+      match /checkins/{checkinID} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+  }
+}
