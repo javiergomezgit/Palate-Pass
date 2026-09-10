@@ -10,10 +10,26 @@ final class HomeViewModel {
     static let maxPins = 3
 
     // MARK: – Output callbacks
+    // Lists of handlers, not single closures: ListViewController and MapViewController
+    // share one view model, so a lone `var onEntriesUpdated` let whichever loaded
+    // last silently clobber the other — the list then never reloaded its table again.
 
-    var onEntriesUpdated: (() -> Void)?
-    var onFetchError:     ((String) -> Void)?
-    var onPinLimitReached: (() -> Void)?
+    private var entriesUpdatedHandlers:  [() -> Void]       = []
+    private var fetchErrorHandlers:      [(String) -> Void] = []
+    private var pinLimitReachedHandlers: [() -> Void]       = []
+
+    /// Registers a handler called on the main thread whenever the entry lists change.
+    func addEntriesUpdatedHandler(_ handler: @escaping () -> Void) {
+        entriesUpdatedHandlers.append(handler)
+    }
+
+    func addFetchErrorHandler(_ handler: @escaping (String) -> Void) {
+        fetchErrorHandlers.append(handler)
+    }
+
+    func addPinLimitReachedHandler(_ handler: @escaping () -> Void) {
+        pinLimitReachedHandlers.append(handler)
+    }
 
     /// Pinned checkins in pin order (max 3). Respects active filter/search.
     private(set) var pinnedEntries: [PlaceCheckin] = []
@@ -87,7 +103,7 @@ final class HomeViewModel {
             DataManager.shared.unpin(pc)
         } else {
             guard DataManager.shared.pinnedIDs.count < HomeViewModel.maxPins else {
-                onPinLimitReached?()
+                pinLimitReachedHandlers.forEach { $0() }
                 return
             }
             DataManager.shared.pin(pc)
@@ -114,7 +130,8 @@ final class HomeViewModel {
                 SyncCoordinator.shared.adopt(stranded)
                 SyncCoordinator.shared.flush()
             case .failure(let error):
-                self.onFetchError?(error.localizedDescription)
+                let message = error.localizedDescription
+                DispatchQueue.main.async { self.fetchErrorHandlers.forEach { $0(message) } }
             }
         }
     }
@@ -134,6 +151,15 @@ final class HomeViewModel {
     }
 
     @objc private func reload() {
+        // Sync and Firestore callbacks post .entriesDidChange from background threads.
+        // The lists below are read by the table view on the main thread, so all
+        // mutation has to happen there too — otherwise counts and contents can
+        // disagree mid-render (duplicated rows) or crash.
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.reload() }
+            return
+        }
+
         var result = DataManager.shared.checkins
 
         if let cat = activeFilter {
@@ -160,6 +186,12 @@ final class HomeViewModel {
                        (pinnedIDs.firstIndex(of: $1.checkin.id) ?? 0) }
         entries = result.filter { !pinnedIDs.contains($0.checkin.id) }
 
-        DispatchQueue.main.async { self.onEntriesUpdated?() }
+        // Deferred one tick, as before: `reload()` can run inside a swipe-action or
+        // alert handler, and reloading the table synchronously from there is fragile.
+        // The lists themselves are already updated, and the table renders from its own
+        // snapshot, so nothing can observe an inconsistent state in the meantime.
+        DispatchQueue.main.async { [weak self] in
+            self?.entriesUpdatedHandlers.forEach { $0() }
+        }
     }
 }

@@ -250,6 +250,12 @@ final class DataManager {
         return UIImage(contentsOfFile: url.path)
     }
 
+    /// On-disk location of a saved photo, for callers that decode it themselves
+    /// (e.g. ImageLoader's downsampled thumbnails).
+    func imageFileURL(named name: String) -> URL? {
+        imageURL(for: name)
+    }
+
     private func deleteImage(named name: String) {
         guard let url = imageURL(for: name) else { return }
         try? FileManager.default.removeItem(at: url)

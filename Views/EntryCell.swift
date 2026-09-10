@@ -114,12 +114,47 @@ final class EntryCell: UITableViewCell {
     /// Tracks the in-flight download so we can cancel it when the cell is reused.
     private var imageTask: URLSessionDataTask?
 
+    /// Bumped on every configure and reuse. An async thumbnail whose generation no
+    /// longer matches is dropped, so a late decode can't paint onto another row.
+    private var thumbGeneration = 0
+
+    /// Shared: building a DateFormatter per cell was measurable during table reloads.
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .none
+        return f
+    }()
+
+    /// Thumbnail is displayed at 62 pt; decode at 3x for the densest screens.
+    private static let thumbMaxPixel: CGFloat = 62 * 3
+
     override func prepareForReuse() {
         super.prepareForReuse()
+        clear()
+    }
+
+    /// Resets every field. Also used when the data source has no entry for a row,
+    /// so a recycled cell can never be shown still carrying another entry's data.
+    func clear() {
+        thumbGeneration += 1
         imageTask?.cancel()
         imageTask = nil
-        thumbImageView.image = nil
-        onShare = nil
+
+        placeLabel.text                 = nil
+        commentLabel.text               = nil
+        commentLabel.isHidden           = true
+        dateLabel.text                  = nil
+        categoryPill.text               = nil
+        categoryPill.backgroundColor    = .clear
+        visibilityLabel.text            = nil
+        visibilityLabel.backgroundColor = .clear
+        syncBadge.isHidden              = true
+        starView.rating                 = 0
+        thumbImageView.image            = nil
+        thumbImageView.tintColor        = nil
+        thumbImageView.backgroundColor  = .secondarySystemBackground
+        onShare                         = nil
     }
 
     @objc private func shareTapped() {
@@ -203,6 +238,10 @@ final class EntryCell: UITableViewCell {
     // MARK: – Configure
 
     func configure(with pc: PlaceCheckin, isPending: Bool = false) {
+        thumbGeneration += 1
+        imageTask?.cancel()
+        imageTask = nil
+
         placeLabel.text = pc.place.name.isEmpty ? "Unknown place" : pc.place.name
         syncBadge.isHidden = !isPending
 
@@ -217,10 +256,7 @@ final class EntryCell: UITableViewCell {
 
         applyVisibility(pc.checkin.visibility)
 
-        let fmt = DateFormatter()
-        fmt.dateStyle = .medium
-        fmt.timeStyle = .none
-        dateLabel.text = fmt.string(from: pc.checkin.checkedInAt)
+        dateLabel.text = Self.dateFormatter.string(from: pc.checkin.checkedInAt)
 
         loadThumbnail(pc: pc, fallbackColor: color)
     }
@@ -228,9 +264,21 @@ final class EntryCell: UITableViewCell {
     // MARK: – Image loading
 
     private func loadThumbnail(pc: PlaceCheckin, fallbackColor: UIColor) {
-        // 1. Local image (created on this device)
-        if let path = pc.checkin.imagePaths.first, let img = DataManager.shared.loadImage(named: path) {
-            applyThumbnail(img)
+        let generation = thumbGeneration
+
+        // 1. Local image (created on this device). Full-resolution JPEGs are decoded
+        //    off the main thread and downsampled, so a reload never blocks on disk I/O.
+        if let path = pc.checkin.imagePaths.first {
+            if let cached = ImageLoader.shared.cachedThumbnail(named: path, maxPixel: Self.thumbMaxPixel) {
+                applyThumbnail(cached)
+                return
+            }
+
+            applyPlaceholder(color: fallbackColor)
+            ImageLoader.shared.loadThumbnail(named: path, maxPixel: Self.thumbMaxPixel) { [weak self] image in
+                guard let self, self.thumbGeneration == generation, let image else { return }
+                self.applyThumbnail(image)
+            }
             return
         }
 
@@ -246,10 +294,9 @@ final class EntryCell: UITableViewCell {
             }
 
             imageTask = ImageLoader.shared.load(urlString: urlString) { [weak self] image in
-                if let image {
-                    self?.applyThumbnail(image)
-                }
+                guard let self, self.thumbGeneration == generation, let image else { return }
                 // If download fails, placeholder stays — no crash
+                self.applyThumbnail(image)
             }
             return
         }

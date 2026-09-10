@@ -42,6 +42,9 @@ final class HomeViewController: UIViewController {
         return sc
     }()
 
+    /// Coalesces keystrokes so a fast typist triggers one filter pass, not one per character.
+    private var searchDebounce: DispatchWorkItem?
+
     // MARK: – Lifecycle
 
     override func viewDidLoad() {
@@ -142,6 +145,17 @@ final class HomeViewController: UIViewController {
 
 extension HomeViewController: UISearchResultsUpdating {
     func updateSearchResults(for searchController: UISearchController) {
-        viewModel.applySearch(searchController.searchBar.text ?? "")
+        let query = searchController.searchBar.text ?? ""
+        searchDebounce?.cancel()
+
+        // Clearing the field should feel instant; typing gets debounced.
+        guard !query.isEmpty else {
+            viewModel.applySearch(query)
+            return
+        }
+
+        let work = DispatchWorkItem { [weak self] in self?.viewModel.applySearch(query) }
+        searchDebounce = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
     }
 }

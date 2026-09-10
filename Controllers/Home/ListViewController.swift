@@ -37,6 +37,12 @@ final class ListViewController: UIViewController {
         return rc
     }()
 
+    /// Snapshot the table renders from. Rebuilt only in `refreshUI()`, immediately
+    /// before `reloadData()`, so row counts and row contents can never disagree —
+    /// reading the view model directly from the data source allowed a background
+    /// update to shrink `entries` while the table still reported the old count.
+    private var sections: [(title: String?, entries: [PlaceCheckin])] = []
+
     private let emptyLabel: UILabel = {
         let l = UILabel()
         l.text = "No entries yet.\nTap + to add your first rating!"
@@ -71,15 +77,15 @@ final class ListViewController: UIViewController {
         let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
         tableView.addGestureRecognizer(longPress)
 
-        viewModel.onEntriesUpdated = { [weak self] in
+        viewModel.addEntriesUpdatedHandler { [weak self] in
             self?.refreshControl.endRefreshing()
             self?.refreshUI()
         }
-        viewModel.onFetchError = { [weak self] message in
+        viewModel.addFetchErrorHandler { [weak self] message in
             self?.refreshControl.endRefreshing()
             self?.showFetchError(message)
         }
-        viewModel.onPinLimitReached = { [weak self] in
+        viewModel.addPinLimitReachedHandler { [weak self] in
             let alert = UIAlertController(
                 title: "Pin Limit Reached",
                 message: "You can pin up to \(HomeViewModel.maxPins) entries. Unpin one to add another.",
@@ -94,9 +100,16 @@ final class ListViewController: UIViewController {
     // MARK: – Private
 
     private func refreshUI() {
-        let totalEmpty = viewModel.pinnedEntries.isEmpty && viewModel.entries.isEmpty
-        emptyLabel.isHidden = !totalEmpty
-        if totalEmpty {
+        let pinned = viewModel.pinnedEntries
+        let rest   = viewModel.entries
+
+        var built: [(title: String?, entries: [PlaceCheckin])] = []
+        if !pinned.isEmpty { built.append(("📌 Pinned", pinned)) }
+        if !rest.isEmpty   { built.append((pinned.isEmpty ? nil : "My Ratings", rest)) }
+        sections = built
+
+        emptyLabel.isHidden = !sections.isEmpty
+        if sections.isEmpty {
             emptyLabel.text = viewModel.searchQuery.isEmpty
                 ? "No entries yet.\nTap + to add your first rating!"
                 : "No results for \"\(viewModel.searchQuery)\"."
@@ -128,13 +141,10 @@ final class ListViewController: UIViewController {
     }
 
     private func entryFor(_ indexPath: IndexPath) -> PlaceCheckin? {
-        if indexPath.section == 0 && !viewModel.pinnedEntries.isEmpty {
-            guard indexPath.row < viewModel.pinnedEntries.count else { return nil }
-            return viewModel.pinnedEntries[indexPath.row]
-        } else {
-            guard indexPath.row < viewModel.entries.count else { return nil }
-            return viewModel.entries[indexPath.row]
-        }
+        guard indexPath.section < sections.count else { return nil }
+        let entries = sections[indexPath.section].entries
+        guard indexPath.row < entries.count else { return nil }
+        return entries[indexPath.row]
     }
 
     private func shareEntry(_ pc: PlaceCheckin, image: UIImage?) {
@@ -169,24 +179,27 @@ final class ListViewController: UIViewController {
 extension ListViewController: UITableViewDataSource, UITableViewDelegate {
 
     func numberOfSections(in tableView: UITableView) -> Int {
-        viewModel.pinnedEntries.isEmpty ? 1 : 2
+        sections.count
     }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        if !viewModel.pinnedEntries.isEmpty && section == 0 {
-            return viewModel.pinnedEntries.count
-        }
-        return viewModel.entries.count
+        guard section < sections.count else { return 0 }
+        return sections[section].entries.count
     }
 
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        guard !viewModel.pinnedEntries.isEmpty else { return nil }
-        return section == 0 ? "📌 Pinned" : "My Ratings"
+        guard section < sections.count else { return nil }
+        return sections[section].title
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: EntryCell.reuseID, for: indexPath) as! EntryCell
-        guard let pc = entryFor(indexPath) else { return cell }
+        guard let pc = entryFor(indexPath) else {
+            // Unreachable while counts come from `sections`, but a recycled cell must
+            // never be returned still showing another entry's data.
+            cell.clear()
+            return cell
+        }
         cell.configure(with: pc, isPending: viewModel.isPending(pc))
         cell.onShare = { [weak self] image in
             self?.shareEntry(pc, image: image)

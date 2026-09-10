@@ -66,7 +66,7 @@ final class MapViewController: UIViewController {
             mapView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
 
-        viewModel.onEntriesUpdated = { [weak self] in self?.refreshPins() }
+        viewModel.addEntriesUpdatedHandler { [weak self] in self?.refreshPins() }
         refreshPins()
     }
 
