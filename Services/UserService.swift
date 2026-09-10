@@ -78,10 +78,23 @@ final class UserService {
     }
 
     /// Fetches the user's pinned entry IDs from Firestore.
-    func fetchPinnedIDs(uid: String, completion: @escaping ([String]) -> Void) {
-        usersCollection.document(uid).getDocument { snapshot, _ in
-            let ids = snapshot?.data()?["pinnedEntryIDs"] as? [String] ?? []
-            completion(ids)
+    ///
+    /// Reports nil when the list could not be read at all — a failed read (offline,
+    /// or rules denying the user document) must not be mistaken for "no pins", or the
+    /// caller overwrites the local list with an empty one.
+    func fetchPinnedIDs(uid: String, completion: @escaping ([String]?) -> Void) {
+        usersCollection.document(uid).getDocument { snapshot, error in
+            if let error {
+                print("fetchPinnedIDs failed: \(error.localizedDescription)")
+                completion(nil)
+                return
+            }
+            // A user document with no pinnedEntryIDs field genuinely means no pins.
+            guard let snapshot, snapshot.exists else {
+                completion(nil)
+                return
+            }
+            completion(snapshot.data()?["pinnedEntryIDs"] as? [String] ?? [])
         }
     }
 }

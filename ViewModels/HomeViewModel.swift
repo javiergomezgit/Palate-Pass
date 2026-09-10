@@ -141,6 +141,9 @@ final class HomeViewModel {
     private func fetchPinnedIDs() {
         guard let uid = Auth.auth().currentUser?.uid else { return }
         UserService.shared.fetchPinnedIDs(uid: uid) { ids in
+            // nil = the read failed; keep whatever is pinned locally rather than
+            // clearing it. Local pins are re-uploaded on the next togglePin.
+            guard let ids else { return }
             DataManager.shared.replacePinnedIDs(ids)
         }
     }
