@@ -41,6 +41,10 @@ GoogleService-Info.plist
 *.provisionprofile
 AuthKey_*.p8
 
+# Local working notes — synced between machines via Dropbox, not the repo
+PROJECT.md
+CLAUDE.md
+
 # Environment / secrets
 .env
 .env.*
